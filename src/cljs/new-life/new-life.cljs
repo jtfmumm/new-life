@@ -9,9 +9,10 @@
 
 (def TILE-SIZE 8)
 (def WORLD-SIZE 100)
-(def TICK 100)
+(def TICK 1000)
 (def REPRODUCTION-RATE 0.01)
 (def FOOD-RATE 0.01)
+(def FOOD-AMOUNT 5)
 
 
 ;;UTILITIES
@@ -37,13 +38,13 @@
 ;;  100+ UIDs for organisms
 (defn gen-world-row []
     (loop [counter 0 world-row []]
-        (if (< counter WORLD-SIZE)
+        (if (<= counter WORLD-SIZE)
             (recur (inc counter) (conj world-row 0))
             world-row)))
 
 (defn gen-world []
     (loop [counter 0 world []]
-        (if (< counter WORLD-SIZE)
+        (if (<= counter WORLD-SIZE)
             (recur (inc counter) (conj world (gen-world-row)))
             world)))
   
@@ -277,16 +278,7 @@
   (let [uid (get-uid)]
     (do
       (gen-organism! uid (initialize-organism uid))
-      (draw-organism uid)
-      (go
-        (loop [uid uid]
-           (if (check-energy uid) 
-             (do
-               (use-energy uid)
-               (try-move uid)        
-               (<! (timeout TICK))
-               (recur uid))
-           (.log js/console (str uid " is dead!"))))))))
+      (draw-organism uid))))
 
 
 ;;INPUT
@@ -328,15 +320,26 @@
 
 
 ;;GAME
-(defn start-simulation []
-  (go
-    (while true
-        (<! (timeout TICK))
-        (clear-screen)
-        (if (> (pick-rand-int 0 100) 80) (place-food 1))
-        (info-sprite (deref current-info))
-        (draw-world)
-        )))
+(defn organism-upkeep [uid]
+  (if (> uid 100) ;Is this an organism?
+      (if (check-energy uid) 
+         (do
+            (use-energy uid)
+            (try-move uid))        
+         (.log js/console (str uid " is dead!")))))
+
+(defn update-organisms []
+    (doseq [uids (list-ids)] (organism-upkeep uids)))
+
+(defn run-simulation []
+      (clear-screen)
+      (update-organisms)
+      (if (> (pick-rand-int 0 100) 80) (place-food FOOD-AMOUNT))
+      (info-sprite (deref current-info))
+      (draw-world))
+
+(defn simulation []
+    (js/setInterval run-simulation TICK))
 
 (deploy-organism)
 (deploy-organism)
@@ -344,4 +347,4 @@
 (deploy-organism)
 (deploy-organism)
 
-(start-simulation)
+(simulation)
