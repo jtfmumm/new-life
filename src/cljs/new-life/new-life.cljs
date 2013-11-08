@@ -1,4 +1,4 @@
-(ns async.core
+(ns new-life.core
     (:require-macros [cljs.core.async.macros :refer [go] :as a])
     (:require 
      		[cljs.core.async :refer [put! timeout chan map<]]
@@ -10,11 +10,13 @@
 (def TILE-SIZE 8)
 (def WORLD-SIZE 100)
 (def TICK 100)
+(def REPRODUCTION-RATE 0.01)
+(def FOOD-RATE 0.01)
 
+
+;;UTILITIES
 (defn make-counter [init-val] 
     (let [c (atom init-val)] #(swap! c inc)))
-
-(def get-uid (make-counter 100))
 
 (defn pick-rand [low high]
   (+
@@ -28,9 +30,10 @@
     (rand-int (inc (- high low)))
     low))
 
-;;CODES FOR WORLD
+
+;;WORLD
 ;;  0-Empty
-;;  10-20 Food
+;;  1-10 Food
 ;;  100+ UIDs for organisms
 (defn gen-world-row []
     (loop [counter 0 world-row []]
@@ -48,67 +51,29 @@
 
 (reset! world (gen-world))
 
+(def current-info (atom #{}))
+
 (defn check-tile [x y]
     (((deref world) y) x))
 
-(defn set-tile [value x y]
+(defn set-tile! [value x y]
     (let [row ((deref world) y)]
     (reset! world 
         (assoc (deref world) y (assoc row x value)))))
 
-;;CANVAS
-(def $drawing ($ :#drawing))
-
-(def ctx (mo/get-context (.get $drawing 0) "2d"))
-
-;(mo/stroke-style ctx "#eee")
-
-(defn draw-line [startx starty finishx finishy]
-	(do
-		(mo/move-to ctx startx starty)
-		(mo/line-to ctx finishx finishy)
-		(mo/stroke ctx)))
-
-(defn color-conversion [color]
-    )
-
-;(defn fill-rectangle [[surface] [x y width height] [r g b]]
-;  (set! (. surface -fillStyle) (str "rgb(" r "," g "," b ")"))
-;  (.fillRect surface x y width height))
-
-;(fill-rectangle [ctx] [200 200 50 50] [256 0 0])
-
-(defn draw-rect [ctx [r g b] x y w h]
-  (set! (. ctx -fillStyle) (str "rgb(" r "," g "," b ")"))
-  (. ctx (fillRect x y w h))
-;  (mo/close-path ctx)
-;  (mo/fill ctx)
-  ctx)
-
-(defn draw-point [color x y]
-	(draw-rect ctx color x y 1 1))
+(defn world-coord [x]
+    (* x TILE-SIZE))
 
 
-;(draw-line 100 100 300 300)
-;(draw-line 0 0 30 30)
-;(draw-point 10 10)
-;(draw-point 200 250)
+;;ORGANISMS
+(def fauna (atom #{}))
 
+(reset! fauna {}) ;Initialize
 
-(defn random-draw []
-	(loop [counter 10000]
-		(if (> counter 0)
-			(do
-				(draw-point "#FF0000" (rand-int 500) (rand-int 500)); (rand-int 500) (rand-int 500))
-				(recur (dec counter))))))
+(defn list-ids []
+      (keys (deref fauna)))
 
-(defn draw-burst [color x y span density]
-	(loop [counter density]
-		(if (> counter 0)
-			(do
-				(draw-point color (pick-rand (- x span) (+ x span)) 
-							(pick-rand (- y span) (+ y span)))
-				(recur (dec counter))))))
+(def get-uid (make-counter 100))
 
 (defn gen-org-row [size]
     (loop [row [] counter 0]
@@ -122,74 +87,143 @@
             (recur (conj matrix (gen-org-row size)) (inc counter))
             matrix)))
 
-(defn draw-row [color x y row size]
+(defn get-trait [uid trait]
+    (((deref fauna) uid) trait))
+
+(defn set-trait! [uid trait value]
+    (reset! fauna (assoc-in (deref fauna) [uid trait] value)))
+
+(defn gen-organism! [uid properties]
+    (reset! fauna (assoc (deref fauna) uid properties)))
+
+
+;;OBJECTS
+(def food-sprite 
+    [[0 0 0 1 0 0 0 0]
+     [0 0 0 0 1 0 1 0]
+     [0 1 0 1 0 1 0 0]
+     [0 0 1 1 1 0 0 1]
+     [0 1 0 1 1 0 1 0]
+     [1 0 0 1 1 1 0 1]
+     [0 0 0 1 1 0 0 0]
+     [0 0 0 1 1 0 0 0]
+    ])
+
+(def food-template
+    {:color [0 256 0] :sprite food-sprite :alive true})
+
+(reset! fauna {assoc (deref fauna) 1 food-template})
+
+(defn place-food [times]
+    (loop [x (pick-rand-int 0 WORLD-SIZE) y (pick-rand-int 0 WORLD-SIZE)
+          counter times]
+      (do
+        (if (= (check-tile x y) 0)
+            (set-tile! 1 x y))
+        (if (> counter 0)
+            (recur (pick-rand-int 0 WORLD-SIZE) (pick-rand-int 0 WORLD-SIZE) (dec counter))))))
+
+
+;;CANVAS
+(def $world-canvas ($ :#world-canvas))
+
+(def world-canvas (mo/get-context (.get $world-canvas 0) "2d"))
+
+(def $info-canvas ($ :#info-canvas))
+
+(def info-canvas (mo/get-context (.get $info-canvas 0) "2d"))
+
+(defn draw-line [ctx startx starty finishx finishy]
+	(do
+		(mo/move-to ctx startx starty)
+		(mo/line-to ctx finishx finishy)
+		(mo/stroke ctx)))
+
+(defn draw-rect [ctx [r g b] x y w h]
+  (set! (. ctx -fillStyle) (str "rgb(" r "," g "," b ")"))
+  (. ctx (fillRect x y w h))
+  ctx)
+
+(defn clear-rectangle [ctx start-x start-y finish-x finish-y]
+    (. ctx (clearRect start-x start-y finish-x finish-y))
+    ctx)
+
+(defn draw-point [ctx color x y scale]
+	(draw-rect ctx color x y scale scale))
+
+(defn draw-row [ctx color x y row size scale]
     (loop [counter 0]
         (if (< counter size)
             (do
               (if (= (row counter) 1)
-                (draw-point color (+ x counter) y))
+                (draw-point ctx color (+ x (* counter scale)) y scale))
               (recur (inc counter))))))
 
-(defn draw-matrix [color x y matrix size]
+(defn draw-matrix [ctx color x y matrix size scale]
     (loop [counter 0]
         (if (< counter size)
             (do
-              (draw-row color x (+ y counter) (matrix counter) size)
-              (recur (inc counter))))))
-;(draw-burst 50 50 10 50)
-
-(defn events [el type]
-  (let [out (chan)]
-    (events/listen el type
-      (fn [e] (put! out e)))
-    out))
-
-(defn pos [e]
-  [(.-clientX e) (.-clientY e)])
-
-(defn world-coord [x]
-    (* x TILE-SIZE))
-
-;(draw-matrix (world-coord 10) (world-coord 20) (gen-org-box 8) 8)
-
-(defn draw-world-row [y]
-    (loop [counter 0]
-      (if (< counter WORLD-SIZE)
-            (do
-              (if (= (((deref world) y) counter) 1)
-                (draw-matrix [0 256 0] (world-coord counter) (world-coord y) (gen-org-box TILE-SIZE) TILE-SIZE))
+              (draw-row ctx color x (+ y (* counter scale)) (matrix counter) size scale)
               (recur (inc counter))))))
 
-(defn draw-world-box []
-    (loop [counter 0]
-        (if (< counter WORLD-SIZE)
-           (do
-              (draw-world-row counter)
-              (recur (inc counter))))));
 
-(draw-world-box)
+;;SCREEN DRAWING
+(defn draw-organism-at [uid x y]
+    (let [sprite (get-trait uid :sprite) color (get-trait uid :color)]
+        (draw-matrix world-canvas color (world-coord x) (world-coord y) sprite TILE-SIZE 1)))
 
-(def explorer (gen-org-box TILE-SIZE))
-
-(defn update-explorer [explorer color x y]
-    (draw-matrix color x y explorer TILE-SIZE))
-
-(defn clear-rectangle [start-x start-y finish-x finish-y]
-    (. ctx (clearRect start-x start-y finish-x finish-y))
-    ctx)
+(defn draw-organism [uid]
+    (let [x (get-trait uid :x) y (get-trait uid :y)
+          sprite (get-trait uid :sprite) color (get-trait uid :color)]
+        (draw-matrix world-canvas color (world-coord x) (world-coord y) sprite TILE-SIZE 1)))
 
 (defn clear-sprite [x y]
-    (clear-rectangle x y (+ x TILE-SIZE) (+ y TILE-SIZE)))
+    (let [x (world-coord x) y (world-coord y)]
+    (clear-rectangle world-canvas x y (+ x TILE-SIZE) (+ y TILE-SIZE))))
 
 (defn clear-screen []
-    (clear-rectangle 0 0 (* WORLD-SIZE 8) (* WORLD-SIZE 8)))
+    (clear-rectangle world-canvas 0 0 (* WORLD-SIZE 8) (* WORLD-SIZE 8)))
 
-;(while true    
-;   (do 
-;      (timeout 5)
-;      (clear-screen)
-;      (update-explorer explorer 50 20)))
+(defn clear-info []
+    (clear-rectangle info-canvas 0 0 64 64))
 
+(defn info-sprite [uid]
+    (clear-info)
+    (jq/html ($ :#info) "")
+    (if-not (= ((deref fauna) uid) nil)
+      (let [color (get-trait uid :color) 
+            sprite (get-trait uid :sprite)
+            energy (get-trait uid :energy)
+            energy-max (get-trait uid :energy-max)
+            ]
+        (do
+           (draw-matrix info-canvas color 0 0 sprite TILE-SIZE 8)
+           (jq/html ($ :#info) (str "<p>ID: " uid 
+                                    "<br>Energy: " energy 
+                                     "<br>Max Energy: " energy-max
+                                     "</p>"))))))
+    
+(defn draw-world-row [y]
+    (loop [counter 0]
+        (if (< counter WORLD-SIZE)
+          (let [curval (check-tile counter y)]
+                (if (and (not (= curval 0))
+                      (get-trait curval :alive))
+                            (draw-matrix world-canvas 
+                                (get-trait curval :color) 
+                                (world-coord counter) (world-coord y)
+                                (get-trait curval :sprite) TILE-SIZE 1))
+                (recur (inc counter))))))
+
+(defn draw-world []
+    (loop [counter 0]
+        (if (< counter WORLD-SIZE)
+            (do
+              (draw-world-row counter)
+              (recur (inc counter))))))
+
+
+;;MECHANICS
 (defn hit-wall [x]
     (cond
         (< x 0) 0
@@ -199,48 +233,115 @@
 (defn walk-drunk [x]
     (hit-wall (+ x (pick-rand-int -1 1)))) 
 
-;(go
-;  (loop [x 0 y 0]
-;    (do 
-;     (<! (timeout 100))
-;     ;(clear-screen)
-;     (update-explorer explorer (world-coord x) (world-coord y))
-;     (recur (walk-drunk x) (walk-drunk y)))))
+(defn try-move [uid]
+    (let [x (get-trait uid :x) y (get-trait uid :y)
+          new-x (walk-drunk x) new-y (walk-drunk y)]
+          (if (= (check-tile new-x new-y) 0)
+              (if-not (and (= new-x x) (= new-y y))
+                      (do
+                        (set-tile! uid new-x new-y) ;Claim new tile
+                        (set-trait! uid :x new-x)
+                        (set-trait! uid :y new-y)
+                        (set-tile! 0 x y) ;Tell world you've left 
+                      )))))
 
-(defn property-map [color]
-    {:color color :start-x (pick-rand-int 0 30) :start-y (pick-rand-int 0 30)})
+(defn check-life [uid]
+    (get-trait uid :alive))
 
-(defn produce-organism [properties]
-  (let [uid get-uid]
+(defn check-energy [uid]
+    (if (< (get-trait uid :energy) 1)
+      (do
+        (set-trait! uid :alive false) 
+        ;(reset! fauna (dissoc (deref fauna) uid))
+        (set-tile! 0 (get-trait uid :x) (get-trait uid :y))
+        false)
+      true))
+
+(defn use-energy [uid]
+    (let [energy (get-trait uid :energy)]
+        (set-trait! uid :energy (dec energy))))
+
+
+;;GENERATING
+(defn initialize-organism [uid]
+    (let [x (pick-rand-int 10 50) y (pick-rand-int 10 50)  
+          sprite (gen-org-box TILE-SIZE) 
+          color [(pick-rand-int 0 256) (pick-rand-int 0 256) (pick-rand-int 0 256)]
+          energy-max (pick-rand-int 80 120) energy energy-max]
+    {:x x :y y :last-x x :last-y y
+     :sprite sprite :color color
+     :energy-max energy-max :energy energy
+     :uid uid :alive true}))
+
+(defn deploy-organism []
+  (let [uid (get-uid)]
+    (do
+      (gen-organism! uid (initialize-organism uid))
+      (draw-organism uid)
+      (go
+        (loop [uid uid]
+           (if (check-energy uid) 
+             (do
+               (use-energy uid)
+               (try-move uid)        
+               (<! (timeout TICK))
+               (recur uid))
+           (.log js/console (str uid " is dead!"))))))))
+
+
+;;INPUT
+(defn events [el type]
+  (let [out (chan)]
+    (events/listen el type
+      (fn [e] (put! out e)))
+    out))
+
+(defn pos [e]
+  [(.-clientX e) (.-clientY e)])
+
+(defn by-id [id]
+  (. js/document (getElementById id)))
+
+(defn listen [el evt func]
+  (. el addEventListener evt func))
+
+(defn offset []
+    (let [space (jq/offset $world-canvas)]
+    (vector (:left space) (:top space))))
+
+(defn report-coords [e]
+    (let [offset (offset)]
+    ;Calculate x y coordinates of clicked spot in terms of Tiles
+    {:x (.floor js/Math (/ (.ceil js/Math (- (.-clientX e) (first offset)))
+                          TILE-SIZE))
+     :y (.floor js/Math (/ (.ceil js/Math (- (.-clientY e) (second offset)))
+                          TILE-SIZE))}))
+
+(defn update-info [coords]
+    (let [uid (check-tile (:x coords) (:y coords))]
+       (if (> uid 100)
+        (reset! current-info uid))))
+
+(jq/bind $world-canvas :click (fn [e] (update-info (report-coords e))))
+
+(reset! current-info 101) ;Grab random info on first organism
+
+
+;;GAME
+(defn start-simulation []
   (go
-      (loop [uid uid sprite (gen-org-box TILE-SIZE) properties properties 
-             x (properties :start-x) y (properties :start-y) 
-             last-x x last-y y]
-         (<! (timeout TICK))
-         (if (= (check-tile x y) 0)
-              (if-not (and (= x last-x) (= y last-y))
-                  (do
-                    (clear-sprite (world-coord last-x) (world-coord last-y))
-                    (set-tile 0 last-x last-y) ;Tell world you've left 
-                    (update-explorer sprite (properties :color) (world-coord x) (world-coord y))
-                    (set-tile uid x y))
-                  (recur uid sprite properties (walk-drunk last-x) (walk-drunk last-y) last-x last-y)))
-         (recur uid sprite properties (walk-drunk x) (walk-drunk y) x y)))))
+    (while true
+        (<! (timeout TICK))
+        (clear-screen)
+        (if (> (pick-rand-int 0 100) 80) (place-food 1))
+        (info-sprite (deref current-info))
+        (draw-world)
+        )))
 
-(produce-organism (property-map [256 0 0]))
+(deploy-organism)
+(deploy-organism)
+(deploy-organism)
+(deploy-organism)
+(deploy-organism)
 
-(produce-organism (property-map [0 256 0]))
-(produce-organism (property-map [0 0 256]))
-(produce-organism (property-map [0 0 0]))
-
-;(draw-matrix "888888" 10 10 explorer TILE-SIZE)
-
-;(draw-row 100 100 (gen-org-row 24) 24)
-;(draw-matrix 100 100 (gen-org-box 24) 24)
-;(go (loop [cur 0]
-;       (do
-;        (<! (timeout 5))
-;        (draw-point 
-;               cur 
-;               (+ 200 (* 125 (.sin js/Math (/ cur (pick-rand 40 80))))))
-;			  (recur (mod (inc cur) 500)))))
+(start-simulation)
