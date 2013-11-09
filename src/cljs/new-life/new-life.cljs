@@ -9,10 +9,11 @@
 
 (def TILE-SIZE 8)
 (def WORLD-SIZE 100)
-(def TICK 1000)
+(def TICK 200)
 (def REPRODUCTION-RATE 0.01)
 (def FOOD-RATE 0.01)
 (def FOOD-AMOUNT 5)
+(def FOOD-BOOST 40)
 
 
 ;;UTILITIES
@@ -53,6 +54,10 @@
 (reset! world (gen-world))
 
 (def current-info (atom #{}))
+
+(def current-time (atom #{}))
+
+(reset! current-time 0)
 
 (defn check-tile [x y]
     (((deref world) y) x))
@@ -196,13 +201,17 @@
             sprite (get-trait uid :sprite)
             energy (get-trait uid :energy)
             energy-max (get-trait uid :energy-max)
+            title (get-trait uid :name)
             ]
         (do
            (draw-matrix info-canvas color 0 0 sprite TILE-SIZE 8)
-           (jq/html ($ :#info) (str "<p>ID: " uid 
+           (jq/html ($ :#info) (str "<p><br>Name: the " title 
                                     "<br>Energy: " energy 
                                      "<br>Max Energy: " energy-max
                                      "</p>"))))))
+
+(defn update-timer []
+    (jq/html ($ :#timer) (str "<p>Time: " (deref current-time))))
     
 (defn draw-world-row [y]
     (loop [counter 0]
@@ -222,6 +231,26 @@
             (do
               (draw-world-row counter)
               (recur (inc counter))))))
+
+
+;;CONSOLE
+(def console-msgs (atom #{}))
+
+(reset! console-msgs ["Complicating, circulating" "New life, new life" 
+                      "Operating, generating" "New life, new life" "..."])
+
+(defn print-to-console [msg]
+    (reset! console-msgs (conj (into [] (rest (deref console-msgs))) msg)))
+
+(defn update-console []
+    (let [msgs (deref console-msgs)]
+      (jq/html ($ :#display) 
+          (str 
+              "> " (first msgs) "<br><br>"
+              "> " (first (rest msgs)) "<br><br>"
+              "> " (first (rest (rest msgs))) "<br><br>"
+              "> " (first (rest (rest (rest msgs)))) "<br><br>"
+              "> " (first (rest (rest (rest (rest msgs)))))))))
 
 
 ;;MECHANICS
@@ -262,17 +291,79 @@
     (let [energy (get-trait uid :energy)]
         (set-trait! uid :energy (dec energy))))
 
+(defn eat-up [uid food]
+    (let [energy (get-trait uid :energy) 
+          energy-max (get-trait uid :energy-max)]
+        (if (<= (+ FOOD-BOOST energy) energy-max)
+            (set-trait! uid :energy (+ energy FOOD-BOOST))
+            (set-trait! uid :energy energy-max))))
+
+(defn find-food [uid]
+    (let [x (get-trait uid :x) y (get-trait uid :y)
+          ;Get neighboring coordinates
+          coords [[(dec x) (dec y)]
+                  [(dec x) y]
+                  [(dec x) (inc y)]
+                  [x (dec y)]
+                  [x (inc y)]
+                  [(inc x) (dec y)]
+                  [(inc x) y]
+                  [(inc x) (inc y)]]]
+      (loop [counter 0]
+          (if (< counter 8)
+            (let [this-x (first (coords counter)) this-y (second (coords counter))]
+              (if (and (and (>= this-x 0) (<= this-x WORLD-SIZE))
+                       (and (>= this-y 0) (<= this-y WORLD-SIZE)))
+                  (if (= (check-tile this-x this-y) 1)
+                    (do
+                        (set-tile! 0 this-x this-y)
+                        (eat-up uid 1))
+                    (recur (inc counter)))
+              (recur (inc counter))))))))
+
+
+;;NAMES
+(def syllables ["a" "e" "i" "o" "u"
+                "ba" "be" "bi" "bo" "bu"
+                "da" "de" "di" "do" "du"
+                "fa" "fe" "fi" "fo" "fu"
+                "ga" "ge" "gi" "go" "gu"
+                "ha" "he" "hi" "ho" "hu"
+                "ja" "je" "ji" "jo" "ju"
+                "ka" "ke" "ki" "ko" "ku"
+                "la" "le" "li" "lo" "lu"
+                "ma" "me" "mi" "mo" "mu"
+                "na" "ne" "ni" "no" "nu"
+                "pa" "pe" "pi" "po" "pu"
+                "qua" "que" "qui" "quo" "quu"
+                "ra" "re" "ri" "ro" "ru"
+                "sa" "se" "si" "so" "su"
+                "ta" "te" "ti" "to" "tu"
+                "va" "ve" "vi" "vo" "vu"
+                "wa" "we" "wi" "wo" "wu"
+                "ya" "ye" "yi" "yo" "yu"
+                "za" "ze" "zi" "zo" "zu"
+                "s" "n" "l" "y" "ch" "sh"])
+
+(defn generate-name []
+    (let [syls (pick-rand-int 1 4)]
+        (loop [counter syls output []]
+            (if (> counter 0)
+                (recur (dec counter) (conj output (syllables (pick-rand-int 0 (count syllables)))))
+                (apply str output)))))
+
 
 ;;GENERATING
 (defn initialize-organism [uid]
     (let [x (pick-rand-int 10 50) y (pick-rand-int 10 50)  
           sprite (gen-org-box TILE-SIZE) 
           color [(pick-rand-int 0 256) (pick-rand-int 0 256) (pick-rand-int 0 256)]
-          energy-max (pick-rand-int 80 120) energy energy-max]
+          energy-max (pick-rand-int 80 120) energy energy-max
+          title (generate-name)]
     {:x x :y y :last-x x :last-y y
      :sprite sprite :color color
      :energy-max energy-max :energy energy
-     :uid uid :alive true}))
+     :uid uid :alive true :name title}))
 
 (defn deploy-organism []
   (let [uid (get-uid)]
@@ -322,11 +413,13 @@
 ;;GAME
 (defn organism-upkeep [uid]
   (if (> uid 100) ;Is this an organism?
+    (if (check-life uid)
       (if (check-energy uid) 
          (do
             (use-energy uid)
-            (try-move uid))        
-         (.log js/console (str uid " is dead!")))))
+            (find-food uid)      
+            (try-move uid)) 
+         (print-to-console (str "the " (get-trait uid :name) " is extinct!"))))))
 
 (defn update-organisms []
     (doseq [uids (list-ids)] (organism-upkeep uids)))
@@ -339,7 +432,13 @@
       (draw-world))
 
 (defn simulation []
-    (js/setInterval run-simulation TICK))
+  (go
+    (while true
+      (<! (timeout TICK))
+      (reset! current-time (inc (deref current-time)))
+      (update-timer)
+      (update-console)
+      (run-simulation))))
 
 (deploy-organism)
 (deploy-organism)

@@ -5,12 +5,18 @@
 	<link type="text/css" rel="stylesheet" href="css/style.css"></link>
 </head>
 <body>
-	<h1>New Life</h1>
-	<br>
-	<canvas id="world-canvas" width="1000" height="1000"></canvas>
-	<canvas id="info-canvas" width="64" height="64"></canvas>
+	<p id="timer"></p>
+	<canvas id="world-canvas" width="801" height="801"></canvas>
+	<div id="info-box">
+		<canvas id="info-canvas" width="64" height="64"></canvas>
+	</div>
 	<canvas id="blank-canvas" width="24" height="64"></canvas>
 	<div id="info"></div>	
+
+	<br>
+	<div id="console">
+		<p id="display">Hello, this is the console.</p>
+	</div>
 
 	<script src="js/jquery-1.10.2.min.js"></script>
 	<script src="js/cljs.js"></script>
