@@ -32,7 +32,13 @@
     (rand-int (inc (- high low)))
     low))
 
+(defn consv [item vect]
+    (into [] (cons item vect)))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;WORLD
 ;;  0-Empty
 ;;  1-10 Food
@@ -130,6 +136,10 @@
             (recur (pick-rand-int 0 WORLD-SIZE) (pick-rand-int 0 WORLD-SIZE) (dec counter))))))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;  JavaScript Implementation  ;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;;CANVAS
 (def $world-canvas ($ :#world-canvas))
 
@@ -140,10 +150,10 @@
 (def info-canvas (mo/get-context (.get $info-canvas 0) "2d"))
 
 (defn draw-line [ctx startx starty finishx finishy]
-	(do
-		(mo/move-to ctx startx starty)
-		(mo/line-to ctx finishx finishy)
-		(mo/stroke ctx)))
+  (do
+    (mo/move-to ctx startx starty)
+    (mo/line-to ctx finishx finishy)
+    (mo/stroke ctx)))
 
 (defn draw-rect [ctx [r g b] x y w h]
   (set! (. ctx -fillStyle) (str "rgb(" r "," g "," b ")"))
@@ -155,7 +165,7 @@
     ctx)
 
 (defn draw-point [ctx color x y scale]
-	(draw-rect ctx color x y scale scale))
+  (draw-rect ctx color x y scale scale))
 
 (defn draw-row [ctx color x y row size scale]
     (loop [counter 0]
@@ -193,6 +203,24 @@
 (defn clear-info []
     (clear-rectangle info-canvas 0 0 64 64))
 
+(defn number->spaced-txt [number]
+    (cond
+        (< number 10) (str number "...")
+        (< number 100) (str number ".")
+        :else (str number "")))
+
+(defn transform-row-to-html [row row-number]
+    (loop [counter 1 row-display (str row-number " ")]
+      (if (< counter 10)
+          (recur (inc counter) (str row-display (number->spaced-txt (row counter))))
+          (str row-display "<br>"))))
+
+(defn display-move-matrix [matrix]
+    (loop [counter 1 html "...1...2...3...4...5...6...7...8...9...<br>"]
+        (if (< counter 10)
+            (recur (inc counter) (str html (transform-row-to-html (matrix counter) counter)))
+            html)))
+
 (defn info-sprite [uid]
     (clear-info)
     (jq/html ($ :#info) "")
@@ -202,12 +230,15 @@
             energy (get-trait uid :energy)
             energy-max (get-trait uid :energy-max)
             title (get-trait uid :name)
+            move-matrix (get-trait uid :move-matrix)
             ]
         (do
            (draw-matrix info-canvas color 0 0 sprite TILE-SIZE 8)
            (jq/html ($ :#info) (str "<p><br>Name: the " title 
                                     "<br>Energy: " energy 
                                      "<br>Max Energy: " energy-max
+                                     "<br>Movement Matrix:"
+                                     "<br>" (display-move-matrix move-matrix)
                                      "</p>"))))))
 
 (defn update-timer []
@@ -252,7 +283,9 @@
               "> " (first (rest (rest (rest msgs)))) "<br><br>"
               "> " (first (rest (rest (rest (rest msgs)))))))))
 
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;MECHANICS
 (defn hit-wall [x]
     (cond
@@ -261,11 +294,35 @@
         :else x))
 
 (defn walk-drunk [x]
-    (hit-wall (+ x (pick-rand-int -1 1)))) 
+    (hit-wall (+ x (pick-rand-int -1 1))))
+
+(defn walk-random [uid]
+    (let [last-move (get-trait uid :last-move)
+          row ((get-trait uid :move-matrix) last-move)
+          row-total (row 0)
+          roll (pick-rand-int 0 row-total)]
+          (loop [counter 1 total 0]
+              (let [cell-value (row counter)]
+              (if (<= roll (+ total cell-value))
+                  counter
+                  (recur (inc counter) (+ total cell-value)))))))
+
+(defn directed-move-x [x direction]
+    (cond
+        (and (>= direction 1) (<= direction 3)) (hit-wall (dec x))
+        (and (>= direction 4) (<= direction 6)) (hit-wall x)
+        (and (>= direction 7) (<= direction 9)) (hit-wall (inc x))))
+
+(defn directed-move-y [y direction]
+    (cond
+        (or (= direction 1) (= direction 4) (= direction 7)) (hit-wall (dec y))
+        (or (= direction 2) (= direction 5) (= direction 8)) (hit-wall y)
+        (or (= direction 3) (= direction 6) (= direction 9)) (hit-wall (inc y))))
 
 (defn try-move [uid]
     (let [x (get-trait uid :x) y (get-trait uid :y)
-          new-x (walk-drunk x) new-y (walk-drunk y)]
+          new-direction (walk-random uid)
+          new-x (directed-move-x x new-direction) new-y (directed-move-y y new-direction)]
           (if (= (check-tile new-x new-y) 0)
               (if-not (and (= new-x x) (= new-y y))
                       (do
@@ -352,23 +409,44 @@
                 (recur (dec counter) (conj output (syllables (pick-rand-int 0 (count syllables)))))
                 (apply str output)))))
 
+(defn generate-move-row []
+    ;Higher values represent increasing odds of choosing
+    ;Position 0 represents total of row's values
+    (loop [counter 1 row []]
+        (if (< counter 10)
+            (recur (inc counter) (conj row (pick-rand-int 0 10)))
+            (consv (reduce + row) row))))
+
+(defn generate-move-matrix []
+    ;Rows and columns represent possible movements
+    ;Movements are from 1-9 (5 represents current tile)
+    ;  1 2 3
+    ;  4 5 6
+    ;  7 8 9
+    (loop [counter 1 matrix [[]]]
+        (if (< counter 10)
+            (recur (inc counter) (conj matrix (generate-move-row)))
+            matrix)))
+
 
 ;;GENERATING
-(defn initialize-organism [uid]
-    (let [x (pick-rand-int 10 50) y (pick-rand-int 10 50)  
+(defn initialize-organism [uid x y]
+    (let [;x (pick-rand-int 10 50) y (pick-rand-int 10 50)  
           sprite (gen-org-box TILE-SIZE) 
           color [(pick-rand-int 0 256) (pick-rand-int 0 256) (pick-rand-int 0 256)]
           energy-max (pick-rand-int 80 120) energy energy-max
-          title (generate-name)]
+          title (generate-name) move-matrix (generate-move-matrix)]
     {:x x :y y :last-x x :last-y y
      :sprite sprite :color color
+     :move-matrix move-matrix 
+     :last-move 5
      :energy-max energy-max :energy energy
      :uid uid :alive true :name title}))
 
-(defn deploy-organism []
+(defn deploy-organism [x y]
   (let [uid (get-uid)]
     (do
-      (gen-organism! uid (initialize-organism uid))
+      (gen-organism! uid (initialize-organism uid x y))
       (draw-organism uid))))
 
 
@@ -410,7 +488,7 @@
 (reset! current-info 101) ;Grab random info on first organism
 
 
-;;GAME
+;;LOOP
 (defn organism-upkeep [uid]
   (if (> uid 100) ;Is this an organism?
     (if (check-life uid)
@@ -419,7 +497,7 @@
             (use-energy uid)
             (find-food uid)      
             (try-move uid)) 
-         (print-to-console (str "the " (get-trait uid :name) " is extinct!"))))))
+         (print-to-console (str "the " (get-trait uid :name) " went extinct in round " @current-time "!"))))))
 
 (defn update-organisms []
     (doseq [uids (list-ids)] (organism-upkeep uids)))
@@ -440,10 +518,17 @@
       (update-console)
       (run-simulation))))
 
-(deploy-organism)
-(deploy-organism)
-(deploy-organism)
-(deploy-organism)
-(deploy-organism)
+(deploy-organism 10 20)
+(deploy-organism 20 20)
+(deploy-organism 30 20)
+(deploy-organism 40 20)
+(deploy-organism 50 20)
+;(deploy-organism 15 20)
+;(deploy-organism 16 20)
+;(deploy-organism 17 20)
+;(deploy-organism 18 20)
+;(deploy-organism 19 20)
+;(deploy-organism 20 20)
+
 
 (simulation)
