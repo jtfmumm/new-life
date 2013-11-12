@@ -47,8 +47,8 @@
 	(into [] (flatten (conj (repeat-preappend vect minus 0) (repeat plus 0)))))	
 
 (defn expand-matrix-x [matrix minus plus]
-	(map #(expand-vector-x % minus plus)
-	     matrix))
+	(into [] (map #(expand-vector-x % minus plus)
+	     matrix)))
 
 (defn repeat-preappend-row [matrix minus]
 	(let [length (count (matrix 0))
@@ -67,20 +67,15 @@
 			new-matrix))))
 
 (defn expand-matrix-y [matrix minus plus]
-	(let [length (count (matrix 0))
-	      new-row (into [] (repeat length 0))]
-	    (loop [counter 0])
-		(conj 
-		  (repeat-preappend matrix minus new-row)
-		  (repeat plus new-row))))
-
-(defn expand-matrix-y [matrix minus plus]
 	(repeat-append-row (repeat-preappend-row matrix minus) plus))
 
 (defn expand-matrix 
-	[matrix & {:keys [x-minus x-plus y-minus y-plus]}]
-			   ;:or {x-minus 0 x-plus 0 y-minus 0 y-plus}}]
+	[matrix & {:keys [x-minus x-plus y-minus y-plus]
+			   :or {x-minus 0 x-plus 0 y-minus 0 y-plus 0}}]
 	    (expand-matrix-y 
 	    	(expand-matrix-x matrix x-minus x-plus)
 	    	y-minus
 	    	y-plus))
+
+
+

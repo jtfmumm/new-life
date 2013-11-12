@@ -21,6 +21,7 @@
    :compiler
    {:pretty-print true,
     :output-to "resources/public/js/cljs.js",
-    :optimizations :simple}}]}
+    :optimizations :simple
+    :source-map "resources/public/js/cljs.js.map"}}]}
 :main musitron.server
 :ring {:handler musitron.server/app})
