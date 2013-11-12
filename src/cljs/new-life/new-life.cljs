@@ -1,6 +1,7 @@
 (ns new-life.core
     (:require-macros [cljs.core.async.macros :refer [go] :as a])
     (:require 
+        [new-life.matrix :as mtx]
      		[cljs.core.async :refer [put! timeout chan map<]]
      		[goog.events :as events]
 	       	[jayq.core :as jq]
@@ -12,8 +13,21 @@
 (def TICK 200)
 (def REPRODUCTION-RATE 0.01)
 (def FOOD-RATE 0.01)
-(def FOOD-AMOUNT 5)
+(def FOOD-AMOUNT 1)
 (def FOOD-BOOST 40)
+(def INITIAL-FOOD 30)
+(def FOOD-RANGE 500)
+
+
+;;MATH
+(defn floor [x]
+    (.floor js/Math x))
+
+(defn ceil [x]
+    (.ceil js/Math x))
+
+(defn abs [x]
+    (.abs js/Math x))
 
 
 ;;UTILITIES
@@ -59,6 +73,12 @@
 
 (reset! world (gen-world))
 
+(defn in-bounds? [x]
+    (cond
+        (< x 0) false
+        (> x WORLD-SIZE) false
+        :else true))
+
 (def current-info (atom #{}))
 
 (def current-time (atom #{}))
@@ -66,15 +86,37 @@
 (reset! current-time 0)
 
 (defn check-tile [x y]
-    (((deref world) y) x))
+    ((@world y) x))
 
 (defn set-tile! [value x y]
-    (let [row ((deref world) y)]
+    (let [row (@world y)]
     (reset! world 
-        (assoc (deref world) y (assoc row x value)))))
+        (assoc @world y (assoc row x value)))))
 
 (defn world-coord [x]
     (* x TILE-SIZE))
+
+(defn get-neighborhood-row [x y size]
+    (let [reach (floor (/ size 2))]
+      (loop [counter 0 row []]
+          (let [this-x (+ x counter)]
+          (if (< counter size)
+              (if (in-bounds? this-x) 
+                  (recur (inc counter) (conj row (check-tile this-x y)))
+                  (recur (inc counter) (conj row 0)))
+              row)))))
+
+(defn get-neighborhood [x y size]
+  (let [reach (floor (/ size 2))
+        start-x (- x reach)
+        start-y (- y reach)]
+      (loop [counter 0 matrix []]
+          (let [this-y (+ start-y counter)]
+          (if (< counter size)
+              (if (in-bounds? this-y)
+                  (recur (inc counter) (conj matrix (get-neighborhood-row start-x this-y size)))
+                  (recur (inc counter) (conj matrix (into [] (repeat size 0))))
+              matrix))))))
 
 
 ;;ORGANISMS
@@ -83,7 +125,7 @@
 (reset! fauna {}) ;Initialize
 
 (defn list-ids []
-      (keys (deref fauna)))
+      (keys @fauna))
 
 (def get-uid (make-counter 100))
 
@@ -100,45 +142,97 @@
             matrix)))
 
 (defn get-trait [uid trait]
-    (((deref fauna) uid) trait))
+    ((@fauna uid) trait))
 
 (defn set-trait! [uid trait value]
-    (reset! fauna (assoc-in (deref fauna) [uid trait] value)))
+    (reset! fauna (assoc-in @fauna [uid trait] value)))
 
 (defn gen-organism! [uid properties]
-    (reset! fauna (assoc (deref fauna) uid properties)))
+    (reset! fauna (assoc @fauna uid properties)))
 
 
 ;;OBJECTS
 (def food-sprite 
-    [[0 0 0 1 0 0 0 0]
+    [[0 0 0 0 0 0 0 0]
      [0 0 0 0 1 0 1 0]
      [0 1 0 1 0 1 0 0]
-     [0 0 1 1 1 0 0 1]
+     [0 0 1 1 1 0 0 0]
      [0 1 0 1 1 0 1 0]
-     [1 0 0 1 1 1 0 1]
+     [0 0 0 1 1 1 0 0]
      [0 0 0 1 1 0 0 0]
-     [0 0 0 1 1 0 0 0]
+     [0 0 0 0 0 0 0 0]
     ])
 
-(def food-template
-    {:color [0 256 0] :sprite food-sprite :alive true})
+(defn food-template [value]
+    (cond
+        (= value 1) {:color [51 256 0] :sprite food-sprite :alive true}
+        (= value 2) {:color [51 153 0] :sprite food-sprite :alive true}
+        (= value 3) {:color [51 51 0] :sprite food-sprite :alive true}))
 
-(reset! fauna {assoc (deref fauna) 1 food-template})
+
+;(reset! fauna {assoc @fauna 1 (food-template 1)})
+
+(gen-organism! 1 (food-template 1))
+
+(gen-organism! 2 (food-template 2))
+
+(gen-organism! 3 (food-template 3))
+
+
+;(reset! fauna {assoc @fauna 200 (food-template 2)})
+
+;(reset! fauna {assoc @fauna 3 {:color [51 51 0] :sprite food-sprite :alive true}})
+
+(defn get-food [x y]
+    ;;If there's food in this spot, return its value
+    (if (and (in-bounds? x)
+             (in-bounds? y))
+        (let [value (check-tile x y)]
+          (cond
+              (< value 10) value
+              :else 0))
+        0))
+
+(defn get-food-value [x]
+    (cond
+        (< x 10) (/ 1 x)
+        :else 0))
+
+(defn get-food-total [matrix]
+    (reduce + (map #(get-food-value %) (flatten matrix))))
+
+(defn food-plenty [x y size]
+    (get-food-total (get-neighborhood x y size)))
+
+(defn food-place-value [plenty]
+    (cond
+        (< plenty 1) 3
+        (< plenty 2) 2
+        :else 1))
 
 (defn place-food [times]
     (loop [x (pick-rand-int 0 WORLD-SIZE) y (pick-rand-int 0 WORLD-SIZE)
           counter times]
+      (let [place-value (food-place-value (food-plenty x y FOOD-RANGE))]
+        (do
+          (if (= (check-tile x y) 0)
+              (set-tile! place-value x y))
+          (if (> counter 0)
+              (recur (pick-rand-int 0 WORLD-SIZE) (pick-rand-int 0 WORLD-SIZE) (dec counter)))))))
+
+(defn seed-food []
+    (loop [x (pick-rand-int 0 WORLD-SIZE) y (pick-rand-int 0 WORLD-SIZE)
+          counter INITIAL-FOOD]
       (do
         (if (= (check-tile x y) 0)
             (set-tile! 1 x y))
         (if (> counter 0)
             (recur (pick-rand-int 0 WORLD-SIZE) (pick-rand-int 0 WORLD-SIZE) (dec counter))))))
 
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;  JavaScript Implementation  ;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 ;;CANVAS
 (def $world-canvas ($ :#world-canvas))
@@ -224,7 +318,7 @@
 (defn info-sprite [uid]
     (clear-info)
     (jq/html ($ :#info) "")
-    (if-not (= ((deref fauna) uid) nil)
+    (if-not (= (@fauna uid) nil)
       (let [color (get-trait uid :color) 
             sprite (get-trait uid :sprite)
             energy (get-trait uid :energy)
@@ -242,15 +336,15 @@
                                      "</p>"))))))
 
 (defn update-timer []
-    (jq/html ($ :#timer) (str "<p>Time: " (deref current-time))))
+    (jq/html ($ :#timer) (str "<p>Time: " @current-time)))
     
 (defn draw-world-row [y]
     (loop [counter 0]
         (if (< counter WORLD-SIZE)
           (let [curval (check-tile counter y)]
                 (if (and (not (= curval 0))
-                      (get-trait curval :alive))
-                            (draw-matrix world-canvas 
+                         (get-trait curval :alive))
+                              (draw-matrix world-canvas 
                                 (get-trait curval :color) 
                                 (world-coord counter) (world-coord y)
                                 (get-trait curval :sprite) TILE-SIZE 1))
@@ -271,10 +365,10 @@
                       "Operating, generating" "New life, new life" "..."])
 
 (defn print-to-console [msg]
-    (reset! console-msgs (conj (into [] (rest (deref console-msgs))) msg)))
+    (reset! console-msgs (conj (into [] (rest @console-msgs)) msg)))
 
 (defn update-console []
-    (let [msgs (deref console-msgs)]
+    (let [msgs @console-msgs]
       (jq/html ($ :#display) 
           (str 
               "> " (first msgs) "<br><br>"
@@ -339,7 +433,6 @@
     (if (< (get-trait uid :energy) 1)
       (do
         (set-trait! uid :alive false) 
-        ;(reset! fauna (dissoc (deref fauna) uid))
         (set-tile! 0 (get-trait uid :x) (get-trait uid :y))
         false)
       true))
@@ -414,7 +507,7 @@
     ;Position 0 represents total of row's values
     (loop [counter 1 row []]
         (if (< counter 10)
-            (recur (inc counter) (conj row (pick-rand-int 0 10)))
+            (recur (inc counter) (conj row (pick-rand-int 7 10)))
             (consv (reduce + row) row))))
 
 (defn generate-move-matrix []
@@ -506,14 +599,15 @@
       (clear-screen)
       (update-organisms)
       (if (> (pick-rand-int 0 100) 80) (place-food FOOD-AMOUNT))
-      (info-sprite (deref current-info))
+      (info-sprite @current-info)
       (draw-world))
 
 (defn simulation []
+  (seed-food)
   (go
     (while true
       (<! (timeout TICK))
-      (reset! current-time (inc (deref current-time)))
+      (reset! current-time (inc @current-time))
       (update-timer)
       (update-console)
       (run-simulation))))
