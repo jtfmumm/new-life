@@ -1,42 +1,18 @@
-(ns new-life.data)
+(ns new-life.data
+  (:require [new-life.matrix :as mtx]))
 
 
-;;CONFIGURATION
-(def config (atom #{}))
-
-(reset! config 
-	{:tile-size 8
-	 :world-size 100
-	 :tick 200
-	 :reproduction-rate 0.01
-	 :food-rate 0.01
-	 :food-amount 1
-	 :food-boost 40
-	 :initial-food 30
-	 :food-range 500})
-
-
-;;TIME
-(def current-time (atom #{}))
-
-(reset! current-time 0)
-
-
-;;CONSOLE
-(def current-info (atom #{}))
-
-
-;;WORLD
-(def world (atom #{}))
-
-(defn initialize-world! [world-map]
-	(reset! world world-map))
-
-
-;;FAUNA
-(def fauna (atom #{}))
-
-(reset! fauna {}) ;Initialize
+;;CONFIG
+(def initial-config
+    {:tile-size 8
+     :world-size 100
+     :tick 200
+     :reproduction-rate 0.01
+     :food-rate 0.01
+     :food-amount 1
+     :food-boost 40
+     :initial-food 30
+     :food-range 500})
 
 
 ;;OBJECTS
@@ -51,11 +27,27 @@
      [0 0 0 0 0 0 0 0]
     ])
 
+(defn empty-sprite [tile-size]
+  (mtx/create-matrix tile-size 0))
+
 (defn food-template [value]
     (cond
         (= value 1) {:color [51 256 0] :sprite food-sprite :alive true}
         (= value 2) {:color [51 153 0] :sprite food-sprite :alive true}
         (= value 3) {:color [51 51 0] :sprite food-sprite :alive true}))
+
+
+;;WORLD
+(def world-skeleton
+  {:time 0
+   :world-map {};(world/gen-world (initial-config :world-size))
+   :fauna {};(world/gen-fauna)
+   :sprites {0 (empty-sprite (:tile-size initial-config)) 1 food-sprite 2 food-sprite 3 food-sprite}
+   :config initial-config
+   :display {:selected 101
+             :console-msg "> "}})
+
+
 
 
 ;;NAMES
@@ -83,13 +75,21 @@
 
 
 
+
+
+
+
+
+
+
+
+(comment
 ;;GET DATA
 (defn get-current-time []
 	@current-time)
 
-(defn get-config 
-	([] @config)
-	([key] (@config key)))
+(defn get-config [world k] 
+	((world :config) k))
 
 (defn get-world []
 	@world)
@@ -130,3 +130,4 @@
 
 (defn gen-organism! [uid properties]
     (reset! fauna (assoc @fauna uid properties)))
+)

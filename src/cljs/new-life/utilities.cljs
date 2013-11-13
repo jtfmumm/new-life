@@ -21,3 +21,10 @@
 
 (defn report [msg]
 	(.log js/console msg))
+
+(defn indexed-enum [f vect config]
+  ;For each member, enum-effect calls a function that takes an index,
+  ;a value, and a config map and produces a side effect
+  (reduce-kv (fn [_ idx val] 
+    (f idx val config)) 
+    nil vect))

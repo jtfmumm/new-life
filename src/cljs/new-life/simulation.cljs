@@ -1,23 +1,44 @@
 (ns new-life.simulation
 	(:require-macros [cljs.core.async.macros :refer [go] :as a])
 	(:require [new-life.world :as world]
-			  [new-life.canvas :as cvs]
+			  [new-life.data :as d]
+        [new-life.canvas :as cvs]
 			  [new-life.utilities :as u]
 			  [new-life.console :as console]
-			  [cljs.core.async :refer [put! timeout chan map<]]))
+			  [cljs.core.async :refer [put! timeout chan alt! map<]]))
 
 
 ;;TEMP
-(def initial-config
-	{:tile-size 8
-	 :world-size 100
-	 :tick 200
-	 :reproduction-rate 0.01
-	 :food-rate 0.01
-	 :food-amount 1
-	 :food-boost 40
-	 :initial-food 30
-	 :food-range 500})
+(def test-world (assoc d/world-skeleton :world-map (world/gen-world-map 100)))
+
+;(world/draw-world test-world)
+
+
+(defn tick-time [world]
+  (update-in world [:config :time] inc))
+  
+(defn make-world-processor-test! [world ms]  
+  (let [c-events (chan 123)]
+    (go
+      (loop [world world]
+        (<! (timeout 1000))
+        (world/draw-world world)
+          (recur world)))
+    c-events))
+
+
+(make-world-processor-test! test-world 500)
+;(make-world-processor-test! d/world-skeleton (get-in d/world-skeleton [:config :tick]))
+
+
+
+
+
+
+
+
+
+(comment
 
 (defn info-sprite [uid]
 	(let [TILE-SIZE (world/get-config :tile-size)]
@@ -58,35 +79,54 @@
 (defn update-organisms []
     (doseq [uids (world/list-uids)] (organism-upkeep uids)))
 
-(defn run-simulation []
-      (world/clear-screen)
-      (update-organisms)
-      (if (> (u/pick-rand-int 0 100) 80) (world/place-food (world/get-config :food-amount)))
-      (info-sprite @console/current-info)
-      (world/draw-world))
+;(defn run-simulation []
+;      (world/clear-screen)
+;      (update-organisms)
+;      (if (> (u/pick-rand-int 0 100) 80) (world/place-food (world/get-config :food-amount)))
+;      (info-sprite @console/current-info)
+;      (world/draw-world world));
 
-(defn simulation []
-  (let [TICK (world/get-config :tick)]
-  (world/seed-food)
-  (go
-    (while true
-      (<! (timeout TICK))
-      (world/set-current-time (inc (world/get-current-time)))
-      (update-timer)
-      (console/update-console)
-      (run-simulation)))))
+;(defn simulation []
+;  (let [TICK (world/get-config :tick)]
+;  (world/seed-food)
+;  (go
+;    (while true
+;      (<! (timeout TICK))
+;      (world/set-current-time (inc (world/get-current-time)))
+;      (update-timer)
+;      (console/update-console)
+;      (run-simulation)))))
+ 
+;(update-in world [:pieces [0 0] :health] dec)
 
-(world/initialize initial-config)
+(defn tick-time [world]
+  (update-in world [:config :time] inc))
 
-;;OBJECTS
-(world/gen-organism! 1 (world/food-template 1))
-(world/gen-organism! 2 (world/food-template 2))
-(world/gen-organism! 3 (world/food-template 3))
+(defn make-world-processor! [world ms]  
+  (let [c-events (async/chan 123)]
+    (go
+      (loop [world world]
+        (world/draw-world world)
+        ;(do-other-things world)
+        (let [sync (async/timeout ms)
+              next (-> world
+                       ;(update-in [:pieces] tick-pieces)
+                       (update-in [:time] tick-time))]
+              ;next (loop [world next]
+              ;       (async/alt!
+              ;         sync ([_ _] world)
+              ;         c-events ([val _] (recur (process-event world val)))))]
+          (recur next))))
+    c-events))
+  
+(defn make-world-processor-test! [world ms]  
+  (let [c-events (async/chan 123)]
+    (go
+      (loop [world world]
+        (world/draw-world world)
+          (recur world)))
+    c-events))
 
-(world/deploy-organism 10 20)
-(world/deploy-organism 20 20)
-(world/deploy-organism 30 20)
-(world/deploy-organism 40 20)
-(world/deploy-organism 50 20)
+;(make-world-processor-test! d/world-skeleton (get-in d/world-skeleton [:config :tick]))
 
-(simulation)
+)

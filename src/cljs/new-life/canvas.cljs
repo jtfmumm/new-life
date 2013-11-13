@@ -29,7 +29,7 @@
     ctx)
 
 (defn draw-point [ctx color x y scale]
-  (draw-rect ctx color x y scale scale))
+        (draw-rect ctx color x y scale scale))
 
 (defn draw-row [ctx color x y row size scale]
     (loop [counter 0]
@@ -44,4 +44,22 @@
         (if (< counter size)
             (do
               (draw-row ctx color x (+ y (* counter scale)) (matrix counter) size scale)
+              (recur (inc counter))))))
+
+(defn draw-color-row [ctx color back-color x y row size scale]
+    (loop [counter 0]
+        (if (< counter size)
+            (do
+              (if (= (row counter) 0)
+                (draw-point ctx back-color (+ x (* counter scale)) y size))
+              (if (= (row counter) 1)
+                (draw-point ctx color (+ x (* counter scale)) y size))
+              (recur (inc counter))))))
+
+(defn draw-color-matrix [matrix & {:keys [x y size color back-color scale ctx]
+                                 :or {size 8 back-color [0, 0, 0] scale 1 ctx world-canvas}}]
+    (loop [counter 0]
+        (if (< counter size)
+            (do
+              (draw-color-row ctx color back-color x (+ y (* counter scale)) (matrix counter) size scale)
               (recur (inc counter))))))

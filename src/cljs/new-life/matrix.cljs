@@ -50,6 +50,14 @@
 	(into [] (map #(expand-vector-x % minus plus)
 	     matrix)))
 
+(defn create-vector [width item]
+    (into [] (repeat width item)))
+
+(defn create-matrix
+  	([side item] (into [] (repeat side (create-vector side item)))) 
+    ([width height item] (into [] (repeat height (create-vector width item)))))
+    
+
 (defn repeat-preappend-row [matrix minus]
 	(let [length (count (matrix 0))
 		  new-row (into [] (repeat length 0))]
@@ -76,6 +84,10 @@
 	    	(expand-matrix-x matrix x-minus x-plus)
 	    	y-minus
 	    	y-plus))
+
+(defn get-cell [matrix x y]
+  ;Returns cell with x and y coordinates associated
+  (assoc ((matrix y) x) :x x :y y))
 
 
 

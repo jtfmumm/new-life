@@ -5,26 +5,6 @@
 			  [new-life.canvas :as cvs]))
 
 
-;;GET DATA
-(defn get-current-time []
-	(d/get-current-time))
-
-(defn get-config
-	;;Variadic... pass key to get that setting
-	([] @d/config)
-	([key] (@d/config key)))
-
-(defn get-world []
-	(d/world))
-
-(defn get-tile [x y]
-	(d/get-tile x y))
-
-(defn get-fauna 
-	([] @d/fauna)
-	([uid] (@d/fauna uid)))
-
-
 ;;WORLD
 ;;  0-Empty
 ;;  1-10 Food
@@ -32,28 +12,66 @@
 (def tile-types 
 	[:plains :forest :hills :river :lake])
 
+(def tile-colors
+  {:plains [255 255 227] :forest [210 255 196] :hills [255 255 132]
+   :river [192 247 254] :lake [96 148 219]})
+
 (def blank-tile
 	{:object 0 
+   :color [0 0 0]
 	 :type (tile-types 0)
 	 :scent 0 
 	 :sound 0 
+   :sprite (d/empty-sprite 8)
 	 })
 
-(defn gen-world-row []
-	(let [WORLD-SIZE (get-config :world-size)]
-    (loop [counter 0 world-row []]
-        (if (<= counter WORLD-SIZE)
-            (recur (inc counter) (conj world-row blank-tile))
-            world-row))))
+(defn gen-coordinates [world-size]
+    (for [x (range world-size) y (range world-size)] [x y]))
 
-(defn gen-world []
-	(let [WORLD-SIZE (get-config :world-size)]
-    (loop [counter 0 world []]
-        (if (<= counter WORLD-SIZE)
-            (recur (inc counter) (conj world (gen-world-row)))
-            world))))
+(defn gen-world-map [world-size]
+  (let [coordinates (gen-coordinates world-size)
+        size (count coordinates)
+        tiles (repeat size blank-tile)]
+    (zipmap coordinates tiles)))
+
+(defn draw-tile [tile tile-size]
+  ;Input tile comes in the form of a vector containing 
+  ;a coordinate vector and a map of values
+  (let [[coord contents] tile
+        [world-x world-y] coord
+        x (* tile-size world-x) y (* tile-size world-y)
+        object-id (:object contents) color (:color contents)
+        back-color (tile-colors (:type contents))
+        sprite (:sprite contents)]
+    (cvs/draw-color-matrix sprite 
+      :x x :y y :size tile-size :color color :back-color back-color)))
+
+(defn draw-world [world]
+  (let [world-map (:world-map world)
+        tile-size (get-in world [:config :tile-size])]
+    (doseq [tile world-map] (draw-tile tile tile-size))))
+
+
   
-(defn in-bounds? [x]
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+(comment  
+  
+  
+  
+  (defn in-bounds? [x]
 	(let [WORLD-SIZE (get-config :world-size)]
     (cond
         (< x 0) false
@@ -171,27 +189,7 @@
 	(let [WORLD-SIZE (get-config :world-size)]
     (cvs/clear-rectangle cvs/world-canvas 0 0 (* WORLD-SIZE 8) (* WORLD-SIZE 8))))
 
-(defn draw-world-row [y]
-	(let [WORLD-SIZE (get-config :world-size)
-		  TILE-SIZE (get-config :tile-size)]
-    (loop [counter 0]
-        (if (< counter WORLD-SIZE)
-          (let [curval (check-tile counter y)]
-                (if (and (not (= curval 0))
-                         (get-trait curval :alive))
-                              (cvs/draw-matrix cvs/world-canvas 
-                                (get-trait curval :color) 
-                                (world-coord counter) (world-coord y)
-                                (get-trait curval :sprite) TILE-SIZE 1))
-                (recur (inc counter)))))))
 
-(defn draw-world []
-	(let [WORLD-SIZE (get-config :world-size)]
-    (loop [counter 0]
-        (if (< counter WORLD-SIZE)
-            (do
-              (draw-world-row counter)
-              (recur (inc counter)))))))
 
 
 ;;MECHANICS
@@ -215,6 +213,9 @@
               (if (<= roll (+ total cell-value))
                   counter
                   (recur (inc counter) (+ total cell-value)))))))
+
+)
+(comment
 
 (defn directed-move-x [x direction]
     (cond
@@ -288,6 +289,8 @@
                     (recur (inc counter)))
               (recur (inc counter))))))))
 
+)
+(comment
 
 ;;NAMES
 (defn generate-name []
@@ -339,6 +342,8 @@
     (do
       (gen-organism! uid (initialize-organism uid x y)))))
 
+)
+(comment
 
 ;;SET DATA
 (defn initialize [parameters]
@@ -350,4 +355,4 @@
 
 (defn set-current-time [new-time]
 	(d/set-current-time! new-time))
-
+)
