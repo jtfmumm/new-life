@@ -55,8 +55,8 @@
 	(cvs/draw-matrix cvs/info-canvas color 0 0 sprite TILE-SIZE 8)
 	    (jq/html ($ :#info) msg))
 
-(defn update-timer [current-time]
-	(jq/html ($ :#timer) (str "Time: " (current-time))))
+(defn update-timer [world]
+	(jq/html ($ :#timer) (str "Time: " (:time world))))
 
 
 

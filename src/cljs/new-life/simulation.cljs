@@ -1,6 +1,7 @@
 (ns new-life.simulation
 	(:require-macros [cljs.core.async.macros :refer [go] :as a])
 	(:require [new-life.world :as world]
+        [new-life.matrix :as mtx]
 			  [new-life.data :as d]
         [new-life.canvas :as cvs]
 			  [new-life.utilities :as u]
@@ -9,26 +10,31 @@
 
 
 ;;TEMP
-(def test-world (assoc d/world-skeleton :world-map (world/gen-world-map 100)))
+;(def test-world (assoc d/world-skeleton :world-map (world/gen-world-map 101)))
 
-;(world/draw-world test-world)
-
+(defn initialize-world []
+  (-> d/world-skeleton
+      (assoc-in [:world-map] (world/gen-world-map 100))
+      (assoc-in [:fauna] (partial world/gen-fauna 5))))
 
 (defn tick-time [world]
   (update-in world [:config :time] inc))
   
-(defn make-world-processor-test! [world ms]  
+(defn make-world-processor-test! [world ms]
+  ;(world/draw-world-background world)  
+  (console/update-timer world)
   (let [c-events (chan 123)]
     (go
       (loop [world world]
-        (<! (timeout 1000))
-        (world/draw-world world)
-          (recur world)))
+        (let [next (-> world
+                       (update-in [:time] inc))]
+        (console/update-timer world)
+        (world/draw-world world)  ;;;<<<<-------------<<<<<<<<<<<<<<<<<--------TIMER's not starting, no draw
+        (<! (timeout ms))
+          (recur next))))
     c-events))
 
-
-(make-world-processor-test! test-world 500)
-;(make-world-processor-test! d/world-skeleton (get-in d/world-skeleton [:config :tick]))
+(make-world-processor-test! (initialize-world) 500)
 
 
 

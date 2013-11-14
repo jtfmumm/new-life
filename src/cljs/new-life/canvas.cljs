@@ -9,6 +9,10 @@
 
 (def world-canvas (mo/get-context (.get $world-canvas 0) "2d"))
 
+(def $world-background ($ :#world-background))
+
+(def world-background (mo/get-context (.get $world-background 0) "2d"))
+
 (def $info-canvas ($ :#info-canvas))
 
 (def info-canvas (mo/get-context (.get $info-canvas 0) "2d"))
@@ -50,9 +54,7 @@
     (loop [counter 0]
         (if (< counter size)
             (do
-              (if (= (row counter) 0)
-                (draw-point ctx back-color (+ x (* counter scale)) y size))
-              (if (= (row counter) 1)
+              (if (not (= (row counter) 0))
                 (draw-point ctx color (+ x (* counter scale)) y size))
               (recur (inc counter))))))
 

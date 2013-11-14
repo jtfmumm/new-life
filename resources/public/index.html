@@ -6,16 +6,23 @@
 </head>
 <body>
 	<p id="timer"></p>
-	<canvas id="world-canvas" width="801" height="801"></canvas>
-	<div id="info-box">
-		<canvas id="info-canvas" width="64" height="64"></canvas>
+	<div style="position: relative" id="world-canvas-wrapper" width="801" height="801">
+		<canvas id="world-background" width="801" height="801" style="position: absolute; left:0; top:0; z-index:0;"></canvas>
+		<canvas id="world-canvas" width="801" height="801" style="position: absolute; left:0; top:0; z-index:1;"></canvas>
 	</div>
-	<canvas id="blank-canvas" width="24" height="64"></canvas>
-	<div id="info"></div>	
 
-	<br>
-	<div id="console">
-		<p id="display">Hello, this is the console.</p>
+	<div id="info-wrapper" width="100" height="801">	
+		<div id="info-box">
+			<canvas id="info-canvas" width="64" height="64"></canvas>
+		</div>
+
+		<canvas id="blank-canvas" width="24" height="64"></canvas>
+
+		<div id="info"></div>	
+		<br>
+		<div id="console">
+			<p id="display">Hello, this is the console.</p>
+		</div>
 	</div>
 
 	<script src="js/jquery-1.10.2.min.js"></script>

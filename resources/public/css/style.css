@@ -20,6 +20,16 @@
 	height: 250px;
 }
 
+#world-canvas-wrapper {
+	float: left;
+	width: 801px;
+	height: 801px;
+}
+
+#info-wrapper {
+	float: left;
+}
+
 #display {
 	padding: 10px 10px;
 }

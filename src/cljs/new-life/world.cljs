@@ -9,50 +9,85 @@
 ;;  0-Empty
 ;;  1-10 Food
 ;;  100+ UIDs for organisms
-(def tile-types 
-	[:plains :forest :hills :river :lake])
 
-(def tile-colors
-  {:plains [255 255 227] :forest [210 255 196] :hills [255 255 132]
-   :river [192 247 254] :lake [96 148 219]})
 
-(def blank-tile
-	{:object 0 
-   :color [0 0 0]
-	 :type (tile-types 0)
-	 :scent 0 
-	 :sound 0 
-   :sprite (d/empty-sprite 8)
-	 })
+;;GET INFO
+(defn get-object [x y world-map]
+  (:object ((world-map y) x)))
 
-(defn gen-coordinates [world-size]
-    (for [x (range world-size) y (range world-size)] [x y]))
+(defn find-empty-coords [world]
+  (let [world-size (get-in world [:config :world-size])
+        world-map (:world-map world)]
+    (loop [x (u/pick-rand-int 0 world-size)
+           y (u/pick-rand-int 0 world-size)]
+      (if (= (get-object x y world-map) 0)
+          [x y]
+          (recur (u/pick-rand-int 0 world-size) (u/pick-rand-int 0 world-size))))))
 
+
+;;WORLD
 (defn gen-world-map [world-size]
-  (let [coordinates (gen-coordinates world-size)
-        size (count coordinates)
-        tiles (repeat size blank-tile)]
-    (zipmap coordinates tiles)))
+  (let [tiles (into [] (repeat world-size d/blank-tile))]
+    (into [] (repeat world-size tiles))))
 
-(defn draw-tile [tile tile-size]
-  ;Input tile comes in the form of a vector containing 
-  ;a coordinate vector and a map of values
-  (let [[coord contents] tile
-        [world-x world-y] coord
-        x (* tile-size world-x) y (* tile-size world-y)
-        object-id (:object contents) color (:color contents)
-        back-color (tile-colors (:type contents))
-        sprite (:sprite contents)]
-    (cvs/draw-color-matrix sprite 
-      :x x :y y :size tile-size :color color :back-color back-color)))
+
+;;ORGANISMS
+(def make-uid (u/make-counter 100))
+
+(defn initialize-organism [uid tile-size]
+    (let [sprite (d/gen-org-sprite tile-size) 
+          color [(u/pick-rand-int 0 255) (u/pick-rand-int 0 125) (u/pick-rand-int 0 255)]
+          energy-max (u/pick-rand-int 80 120) energy energy-max
+          title (d/generate-name) move-matrix (d/generate-move-matrix)]
+    {:coords {:x -1 :y -1}
+     :sprite sprite :color color
+     :move-matrix move-matrix 
+     :last-move 5
+     :energy-max energy-max :energy energy
+     :uid uid :alive true :name title}))
+
+(defn deploy-organism [world]
+  (let [uid (make-uid)
+        [x y] (find-empty-coords world)
+        organism (-> (initialize-organism uid (get-in world [:config :tile-size]))
+                     (assoc-in [:coords :x] x) 
+                     (assoc-in [:coords :y] y))]
+      (assoc-in world [:fauna uid] organism)))
+
+(defn gen-fauna [num-organisms world]
+  (u/self-pipe world deploy-organism num-organisms))
+
+
+;;DRAWING
+(defn draw-tile [x y tile & f-args]
+  (let [[tile-size world] f-args
+        x (* tile-size x) y (* tile-size y)
+        uid (:object tile) object (get-in world [:fauna uid]) 
+        color (:color object)
+        sprite (:sprite object)]
+    (cvs/draw-color-matrix sprite
+      :x x :y y :size tile-size :color color)))
 
 (defn draw-world [world]
   (let [world-map (:world-map world)
         tile-size (get-in world [:config :tile-size])]
-    (doseq [tile world-map] (draw-tile tile tile-size))))
+  (mtx/walk-matrix-by-coordinates draw-tile world-map tile-size world)))
 
+(defn draw-tile-background [x y tile & f-args]
+  (let [[tile-size sprite] f-args
+        x (* tile-size x) y (* tile-size y)
+        color (d/tile-colors (:type tile))]
+    (cvs/draw-color-matrix sprite
+      :x x :y y :size tile-size :color color :ctx cvs/world-background)))
 
+(defn draw-world-background [world]
+  (let [world-map (:world-map world)
+        tile-size (get-in world [:config :tile-size])
+        sprite (d/background-sprite tile-size)]
+    (mtx/walk-matrix-by-coordinates draw-tile-background world-map tile-size sprite)))
   
+
+
   
   
   
@@ -98,17 +133,6 @@
 
 (def make-uid (u/make-counter 100))
 
-(defn gen-org-row [size]
-    (loop [row [] counter 0]
-        (if (< counter size)
-            (recur (conj row (u/pick-rand-int 0 2)) (inc counter))
-            row)))
-
-(defn gen-org-box [size]
-    (loop [matrix [] counter 0]
-        (if (< counter size) 
-            (recur (conj matrix (gen-org-row size)) (inc counter))
-            matrix)))
 
 (defn get-trait [uid trait]
     (d/get-trait uid trait))
@@ -293,54 +317,16 @@
 (comment
 
 ;;NAMES
-(defn generate-name []
-    (let [syls (u/pick-rand-int 1 4)]
-        (loop [counter syls output []]
-            (if (> counter 0)
-                (recur (dec counter) (conj output (d/syllables (u/pick-rand-int 0 (count d/syllables)))))
-                (apply str output)))))
 
 
 
-(defn generate-move-row []
-    ;Higher values represent increasing odds of choosing
-    ;Position 0 represents total of row's values
-    (loop [counter 1 row []]
-        (if (< counter 10)
-            (recur (inc counter) (conj row (u/pick-rand-int 7 10)))
-            (u/consv (reduce + row) row))))
 
-(defn generate-move-matrix []
-    ;Rows and columns represent possible movements
-    ;Movements are from 1-9 (5 represents current tile)
-    ;  1 2 3
-    ;  4 5 6
-    ;  7 8 9
-    (loop [counter 1 matrix [[]]]
-        (if (< counter 10)
-            (recur (inc counter) (conj matrix (generate-move-row)))
-            matrix)))
+
 
 
 ;;GENERATING
-(defn initialize-organism [uid x y]
-    (let [;x (u/pick-rand-int 10 50) y (u/pick-rand-int 10 50)  
-    	  TILE-SIZE (get-config :tile-size)
-          sprite (gen-org-box TILE-SIZE) 
-          color [(u/pick-rand-int 0 256) (u/pick-rand-int 0 256) (u/pick-rand-int 0 256)]
-          energy-max (u/pick-rand-int 80 120) energy energy-max
-          title (generate-name) move-matrix (generate-move-matrix)]
-    {:x x :y y :last-x x :last-y y
-     :sprite sprite :color color
-     :move-matrix move-matrix 
-     :last-move 5
-     :energy-max energy-max :energy energy
-     :uid uid :alive true :name title}))
 
-(defn deploy-organism [x y]
-  (let [uid (make-uid)]
-    (do
-      (gen-organism! uid (initialize-organism uid x y)))))
+
 
 )
 (comment
