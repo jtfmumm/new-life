@@ -5,6 +5,16 @@
 (defn consv [item vect]
     (into [] (cons item vect)))
 
+(defn dist-below [number thresh]
+  (cond 
+    (>= number thresh) 0)
+    :else (- thresh number))
+
+(defn dist-above [number thresh]
+  (cond 
+    (<= number thresh) 0)
+    :else (- number thresh))
+
 (defn submatrix [matrix x y x-size y-size]
     (let [max-x (count (matrix 0))
           max-y (count matrix)
@@ -22,7 +32,31 @@
           y-size (cond 
                     (>= (+ y y-size) max-y) (- max-y y) 
                     :else y-size)]
-    (map #(subvec % x (+ x x-size)) (subvec matrix y (+ y y-size)))))
+    (into [] (map #(subvec % x (+ x x-size)) (subvec matrix y (+ y y-size))))))
+
+(defn print-matrix [print-f matrix]
+  (loop [counter 0] (if (< counter (count matrix))  
+    (do 
+      (print-f (matrix counter)) 
+      (recur (inc counter)))
+    "done")))
+
+(defn row-neighborhood [row idx rang]
+  (let [start-idx (- idx rang)
+        end-idx (+ idx rang)]
+        (loop [counter start-idx new-row []]
+          (if (<= counter end-idx)
+            (recur (inc counter) (conj new-row (get-in row [counter])))
+            new-row))))
+
+(defn neighborhood [matrix x y rang]
+  (let [start-y (- y rang)
+        end-y (+ y rang)]
+        (loop [counter start-y new-matrix []]
+          (if (<= counter end-y)
+            (recur (inc counter) 
+              (conj new-matrix (row-neighborhood (get-in matrix [counter]) x rang)))
+            new-matrix))))
 
 
 ;;OPERATE ON MATRICES
@@ -80,6 +114,27 @@
         (expand-matrix-x matrix x-minus x-plus)
         y-minus
         y-plus))
+
+(defn filled-submatrix [top-left bottom-right matrix]
+  (let [[x- y-] top-left 
+        [x+ y+] bottom-right
+        max-x (dec (count (matrix 0))) 
+        max-y (dec (count matrix))
+        x-minus (dist-below x- 0)
+        y-minus (dist-below y- 0)
+        x-plus (dist-above x+ max-x)
+        y-plus (dist-above y+ max-y)
+        new-x- (- x- (- x-minus))
+        new-y- (- y- (- y-minus))
+        new-x+ (+ x+ x-minus)
+        new-y+ (+ y+ y-minus)]
+    (submatrix
+      (expand-matrix matrix 
+        :x-minus x-minus :x-plus x-plus 
+        :y-minus y-minus :y-plus y-plus)
+      new-x- new-y- ;Get our new top-left
+      (inc (- new-x+ new-x-)) (inc (- new-y+ new-y-)) ;Get our x-size and y-size
+      )))
 
 
 ;;CREATE MATRICES

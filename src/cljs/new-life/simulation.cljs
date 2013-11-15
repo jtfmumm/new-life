@@ -11,11 +11,42 @@
 
 ;;TEMP
 ;(def test-world (assoc d/world-skeleton :world-map (world/gen-world-map 101)))
+(def syllables ["a" "e" "i" "o" "u"
+                "ba" "be" "bi" "bo" "bu"
+                "da" "de" "di" "do" "du"
+                "fa" "fe" "fi" "fo" "fu"
+                "ga" "ge" "gi" "go" "gu"
+                "ha" "he" "hi" "ho" "hu"
+                "ja" "je" "ji" "jo" "ju"
+                "ka" "ke" "ki" "ko" "ku"
+                "la" "le" "li" "lo" "lu"
+                "ma" "me" "mi" "mo" "mu"
+                "na" "ne" "ni" "no" "nu"
+                "pa" "pe" "pi" "po" "pu"
+                "qua" "que" "qui" "quo" "quu"
+                "ra" "re" "ri" "ro" "ru"
+                "sa" "se" "si" "so" "su"
+                "ta" "te" "ti" "to" "tu"
+                "va" "ve" "vi" "vo" "vu"
+                "wa" "we" "wi" "wo" "wu"
+                "ya" "ye" "yi" "yo" "yu"
+                "za" "ze" "zi" "zo" "zu"
+                "s" "n" "l" "y" "ch" "sh"])
+
+(defn generate-name []
+    (let [syls (u/pick-rand-int 1 4)]
+        (loop [counter syls output []]
+            (if (> counter 0)
+                (recur (dec counter) (conj output (syllables (u/pick-rand-int 0 (count syllables)))))
+                (apply str output)))))
+
 
 (defn initialize-world []
   (-> d/world-skeleton
       (assoc-in [:world-map] (world/gen-world-map 100))
-      (assoc-in [:fauna] (partial world/gen-fauna 5))))
+      ((partial world/gen-fauna 5))
+      (world/initialize-food)
+      (world/gen-food))) ;;Initial organisms
 
 (defn tick-time [world]
   (update-in world [:config :time] inc))
@@ -26,17 +57,25 @@
   (let [c-events (chan 123)]
     (go
       (loop [world world]
-        (let [next (-> world
-                       (update-in [:time] inc))]
+        (let [config (get-in world [:config])
+              next (-> world
+                       (update-in [:time] inc)
+                       (world/grow-food))]
+        (world/clear-screen config)
         (console/update-timer world)
+        ;(world/update-organisms)
+       
         (world/draw-world world)  ;;;<<<<-------------<<<<<<<<<<<<<<<<<--------TIMER's not starting, no draw
+        ;(console/update-console)
         (<! (timeout ms))
           (recur next))))
     c-events))
 
 (make-world-processor-test! (initialize-world) 500)
 
-
+;      (update-organisms)
+;      (if (> (u/pick-rand-int 0 100) 80) (world/place-food (world/get-config :food-amount)))
+;      (info-sprite @console/current-info)
 
 
 

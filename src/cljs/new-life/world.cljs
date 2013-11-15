@@ -12,8 +12,11 @@
 
 
 ;;GET INFO
-(defn get-object [x y world-map]
-  (:object ((world-map y) x)))
+(defn get-object 
+  ([coords world-map] 
+    (let [[x y] coords]
+      (get-object x y world-map)))
+  ([x y world-map] (:object ((world-map y) x))))
 
 (defn find-empty-coords [world]
   (let [world-size (get-in world [:config :world-size])
@@ -36,7 +39,7 @@
 
 (defn initialize-organism [uid tile-size]
     (let [sprite (d/gen-org-sprite tile-size) 
-          color [(u/pick-rand-int 0 255) (u/pick-rand-int 0 125) (u/pick-rand-int 0 255)]
+          color [(u/pick-rand-int 0 255) (u/pick-rand-int 0 125) (u/pick-rand-int 0 255) 1]
           energy-max (u/pick-rand-int 80 120) energy energy-max
           title (d/generate-name) move-matrix (d/generate-move-matrix)]
     {:coords {:x -1 :y -1}
@@ -52,10 +55,59 @@
         organism (-> (initialize-organism uid (get-in world [:config :tile-size]))
                      (assoc-in [:coords :x] x) 
                      (assoc-in [:coords :y] y))]
-      (assoc-in world [:fauna uid] organism)))
+      (-> world
+          (assoc-in [:world-map y x :object] uid)
+          (assoc-in [:fauna uid] organism))))
 
 (defn gen-fauna [num-organisms world]
   (u/self-pipe world deploy-organism num-organisms))
+
+
+;;FOOD
+(defn initialize-food [world]
+  (update-in world [:fauna] assoc 
+    1 (d/food-template 1)
+    2 (d/food-template 2)
+    3 (d/food-template 3)))
+
+(defn food-plenty [world-map x y rang]
+  (let [object-matrix (into [] (map #(into [] (map :object %)) world-map))
+        neighbors (mtx/neighborhood object-matrix x y rang)]
+    (reduce + (map #(d/food-value %) (flatten neighbors)))))
+
+(defn sprout-food [world]
+  (let [config (:config world)
+        world-map (:world-map world)
+        WORLD-SIZE (:world-size config)
+        FOOD-RANGE (:food-range config)
+        [x y] (u/rand-pair 0 WORLD-SIZE)
+        place-value (d/plant-vitality (food-plenty world-map x y FOOD-RANGE))]
+    (if (= (get-object x y world-map) 0)
+      (if (>= (u/pick-rand-int 1 place-value) place-value)   ;;Healthier plants more likely to grow
+          (assoc-in world [:world-map x y :object] place-value)
+          world)
+      world)))
+
+(defn grow-food [world]
+  (let [food-rate (get-in world [:config :food-rate])
+        times (get-in world [:config :food-amount])]
+    (if (< (u/pick-rand-int 0 100) food-rate)
+      (u/self-pipe world sprout-food times)
+      world)))
+        
+(defn seed-food [world]
+  (let [config (:config world)
+        world-map (:world-map world)
+        WORLD-SIZE (:world-size config)
+        INITIAL-FOOD (:initial-food config)
+        possible-coords (u/rand-pairs 0 WORLD-SIZE)]
+    (some #(if (= (get-object % world-map) 0)
+              (assoc-in world [:world-map (first %) (second %) :object] 1)) 
+          possible-coords)))
+
+(defn gen-food [world]
+  (let [times (get-in world [:config :initial-food])]
+    (u/self-pipe world seed-food times)))
 
 
 ;;DRAWING
@@ -65,8 +117,9 @@
         uid (:object tile) object (get-in world [:fauna uid]) 
         color (:color object)
         sprite (:sprite object)]
-    (cvs/draw-color-matrix sprite
-      :x x :y y :size tile-size :color color)))
+    (if-not (= sprite nil)
+      (cvs/draw-color-matrix sprite
+        :x x :y y :size tile-size :color color :ctx cvs/world-foreground))))
 
 (defn draw-world [world]
   (let [world-map (:world-map world)
@@ -85,6 +138,11 @@
         tile-size (get-in world [:config :tile-size])
         sprite (d/background-sprite tile-size)]
     (mtx/walk-matrix-by-coordinates draw-tile-background world-map tile-size sprite)))
+
+(defn clear-screen [config]
+  (let [WORLD-SIZE (:world-size config)
+        TILE-SIZE (:tile-size config)]
+    (cvs/clear-rectangle cvs/world-foreground 0 0 (* WORLD-SIZE TILE-SIZE) (* WORLD-SIZE TILE-SIZE))))
   
 
 
@@ -123,8 +181,6 @@
 	(let [TILE-SIZE (get-config :tile-size)]
     (* x TILE-SIZE)))
 
-(defn get-neighborhood [x y size]
-    (mtx/submatrix @d/world x y size size))
 
 
 ;;ORGANISMS
@@ -156,62 +212,20 @@
               :else 0))
         0))
 
-(defn get-food-value [x]
-    (cond
-        (< x 10) (/ 1 x)
-        :else 0))
-
-(defn get-food-total [matrix]
-    (reduce + (map #(get-food-value %) (flatten matrix))))
-
-(defn food-plenty [x y size]
-    (get-food-total (get-neighborhood x y size)))
-
-(defn food-place-value [plenty]
-    (cond
-        (< plenty 1) 3
-        (< plenty 2) 2
-        :else 1))
-
-(defn place-food [times]
-	(let [WORLD-SIZE (get-config :world-size)
-		  FOOD-RANGE (get-config :food-range)]
-    (loop [x (u/pick-rand-int 0 WORLD-SIZE) y (u/pick-rand-int 0 WORLD-SIZE)
-          counter times]
-      (let [place-value (food-place-value (food-plenty x y FOOD-RANGE))]
-        (do
-          (if (= (check-tile x y) 0)
-              (set-tile! place-value x y))
-          (if (> counter 0)
-              (recur (u/pick-rand-int 0 WORLD-SIZE) (u/pick-rand-int 0 WORLD-SIZE) (dec counter))))))))
-
-(defn seed-food []
-	(let [WORLD-SIZE (get-config :world-size)
-		  INITIAL-FOOD (get-config :initial-food)]
-    (loop [x (u/pick-rand-int 0 WORLD-SIZE) y (u/pick-rand-int 0 WORLD-SIZE)
-          counter INITIAL-FOOD]
-      (do
-        (if (= (check-tile x y) 0)
-            (set-tile! 1 x y))
-        (if (> counter 0)
-            (recur (u/pick-rand-int 0 WORLD-SIZE) (u/pick-rand-int 0 WORLD-SIZE) (dec counter)))))))
-
 
 ;;SCREEN DRAWING
 (defn draw-organism [uid]
     (let [TILE-SIZE (get-config :tile-size)
     	  x (get-trait uid :x) y (get-trait uid :y)
           sprite (get-trait uid :sprite) color (get-trait uid :color)]
-        (cvs/draw-matrix cvs/world-canvas color (world-coord x) (world-coord y) sprite TILE-SIZE 1)))
+        (cvs/draw-matrix cvs/world-foreground color (world-coord x) (world-coord y) sprite TILE-SIZE 1)))
 
 (defn clear-sprite [x y]
     (let [TILE-SIZE (get-config :tile-size)
     	  x (world-coord x) y (world-coord y)]
-    (cvs/clear-rectangle cvs/world-canvas x y (+ x TILE-SIZE) (+ y TILE-SIZE))))
+    (cvs/clear-rectangle cvs/world-foreground x y (+ x TILE-SIZE) (+ y TILE-SIZE))))
 
-(defn clear-screen []
-	(let [WORLD-SIZE (get-config :world-size)]
-    (cvs/clear-rectangle cvs/world-canvas 0 0 (* WORLD-SIZE 8) (* WORLD-SIZE 8))))
+
 
 
 

@@ -1,6 +1,7 @@
 (ns new-life.console
 	(:require [new-life.canvas :as cvs]
-		      [jayq.core :as jq])
+		      [jayq.core :as jq]
+          [new-life.utilities :as u])
    	(:use [jayq.core :only [$]]))
 
 

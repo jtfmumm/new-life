@@ -1,13 +1,14 @@
 (ns new-life.canvas
 	(:require [monet.canvas :as mo]		      
-		      [jayq.core :as jq])
+		      [jayq.core :as jq]
+          [new-life.utilities :as u])
 	(:use [jayq.core :only [$]]))
 
 
 ;;CANVAS
-(def $world-canvas ($ :#world-canvas))
+(def $world-foreground ($ :#world-foreground))
 
-(def world-canvas (mo/get-context (.get $world-canvas 0) "2d"))
+(def world-foreground (mo/get-context (.get $world-foreground 0) "2d"))
 
 (def $world-background ($ :#world-background))
 
@@ -23,8 +24,8 @@
     (mo/line-to ctx finishx finishy)
     (mo/stroke ctx)))
 
-(defn draw-rect [ctx [r g b] x y w h]
-  (set! (. ctx -fillStyle) (str "rgb(" r "," g "," b ")"))
+(defn draw-rect [ctx [r g b a] x y w h]
+  (set! (. ctx -fillStyle) (str "rgba(" r "," g "," b "," a ")"))
   (. ctx (fillRect x y w h))
   ctx)
 
@@ -54,12 +55,12 @@
     (loop [counter 0]
         (if (< counter size)
             (do
-              (if (not (= (row counter) 0))
-                (draw-point ctx color (+ x (* counter scale)) y size))
+              (if (= (row counter) 1)
+                (draw-point ctx color (+ x (* counter scale)) y scale))
               (recur (inc counter))))))
 
 (defn draw-color-matrix [matrix & {:keys [x y size color back-color scale ctx]
-                                 :or {size 8 back-color [0, 0, 0] scale 1 ctx world-canvas}}]
+                                 :or {size 8 back-color [0, 0, 0] scale 1 ctx world-foreground}}]
     (loop [counter 0]
         (if (< counter size)
             (do

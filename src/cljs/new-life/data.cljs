@@ -1,5 +1,6 @@
 (ns new-life.data
-  (:require [new-life.matrix :as mtx]))
+  (:require [new-life.matrix :as mtx]
+            [new-life.utilities :as u]))
 
 
 ;;CONFIG
@@ -8,20 +9,20 @@
      :world-size 99
      :tick 200
      :reproduction-rate 0.01
-     :food-rate 0.01
-     :food-amount 1
-     :food-boost 40
-     :initial-food 30
-     :food-range 500})
-
+     :food-rate 20    ;Rate food grows
+     :food-amount 15     ;Amount of food per cycle
+     :food-boost 40     ;How much energy does full food give?
+     :initial-food 40   ;How much food at start?
+     :food-range 7    ;How distant can plants be to have an effect?
+    })
 
 ;;TILES
 (def tile-types 
     [:plains :forest :hills :river :lake])
 
 (def tile-colors
-  {:plains [255 255 227] :forest [210 255 196] :hills [255 255 132]
-   :river [192 247 254] :lake [96 148 219]})
+  {:plains [255 255 227 1] :forest [210 255 196 1] :hills [255 255 132 1]
+   :river [192 247 254 1] :lake [96 148 219 1]})
 
 (def blank-tile
     {:object 0 
@@ -51,9 +52,23 @@
 
 (defn food-template [value]
     (cond
-        (= value 1) {:color [51 256 0] :sprite food-sprite :alive true}
-        (= value 2) {:color [51 153 0] :sprite food-sprite :alive true}
-        (= value 3) {:color [51 51 0] :sprite food-sprite :alive true}))
+        (= value 1) {:color [51 255 0 1] :sprite food-sprite :alive true}
+        (= value 2) {:color [51 255 0 (/ 1 2)] :sprite food-sprite :alive true}
+        (= value 3) {:color [51 255 0 (/ 1 3)] :sprite food-sprite :alive true}))
+
+(defn food-value [x]
+    (cond
+        (= x nil) 0
+        (= x 1) 1
+        (= x 2) (/ 1 2)
+        (= x 3) (/ 1 3)
+        :else 0))
+
+(defn plant-vitality [plenty]
+    (cond
+        (< plenty 1) 3
+        (< plenty 2) 2
+        :else 1))
 
 
 ;;WORLD
@@ -61,7 +76,7 @@
   {:time 0
    :world-map [];(world/gen-world (initial-config :world-size))
    :fauna {};(world/gen-fauna)
-   :sprites {0 (empty-sprite (:tile-size initial-config)) 1 food-sprite 2 food-sprite 3 food-sprite}
+   :sprites {1 food-sprite 2 food-sprite 3 food-sprite}
    :config initial-config
    :display {:selected 101
              :console-msg "> "}})
@@ -102,6 +117,8 @@
                 (recur (dec counter) (conj output (syllables (u/pick-rand-int 0 (count syllables)))))
                 (apply str output)))))
 
+(defn add []
+    (+ 1 1))
 
 ;;MOVEMENT
 (defn generate-move-matrix []
