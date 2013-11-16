@@ -41,12 +41,14 @@
         :else (str number "")))
 
 (defn transform-row-to-html [row row-number]
+    (u/alert-me "Set")
     (loop [counter 1 row-display (str row-number " ")]
       (if (< counter 10)
           (recur (inc counter) (str row-display (number->spaced-txt (row counter))))
           (str row-display "<br>"))))
 
 (defn display-move-matrix [matrix]
+    (u/alert-me "Ready")
     (loop [counter 1 html "...1...2...3...4...5...6...7...8...9...<br>"]
         (if (< counter 10)
             (recur (inc counter) (str html (transform-row-to-html (matrix counter) counter)))

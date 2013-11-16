@@ -6,15 +6,18 @@
 ;;CONFIG
 (def initial-config
     {:tile-size 8
-     :world-size 99
+     :world-size 100
      :tick 200
      :reproduction-rate 0.01
      :food-rate 20    ;Rate food grows
-     :food-amount 15     ;Amount of food per cycle
+     :food-amount 10     ;Amount of food per cycle
      :food-boost 40     ;How much energy does full food give?
      :initial-food 40   ;How much food at start?
      :food-range 7    ;How distant can plants be to have an effect?
     })
+
+(defn list-uids [world]
+    (keys (:fauna world)))
 
 ;;TILES
 (def tile-types 
@@ -123,61 +126,3 @@
 ;;MOVEMENT
 (defn generate-move-matrix []
     (mtx/create-weighted-matrix 9 (partial u/pick-rand-int 7 10)))
-
-
-
-
-
-
-
-
-
-
-(comment
-;;GET DATA
-(defn get-current-time []
-	@current-time)
-
-(defn get-config [world k] 
-	((world :config) k))
-
-(defn get-world []
-	@world)
-
-(defn get-tile [x y]
-	((@world y) x))
-
-(defn check-tile [x y]
-	(((@world y) x) :object))
-
-(defn get-fauna
-	([] @fauna)
-	([uid] (@fauna uid)))
-
-(defn get-trait [uid trait]
-	((@fauna uid) trait))
-
-(defn list-uids []
-	(keys @fauna))
-
-
-;;SET DATA
-(defn set-current-time! [new-time]
-	(reset! current-time new-time))
-
-(defn set-configuration! [parameters]
-	(reset! config parameters))
-
-(defn update-setting! [k v]
-	(reset! config (assoc @config k v)))
-
-(defn set-tile! [x y k v]
-	(let [row (@world y)]
-	(reset! world (assoc @world y (assoc row x (assoc (row x) k v))))))
-
-(defn set-trait! [uid trait value]
-    (reset! fauna (assoc-in @fauna [uid trait] value)))
-
-(defn gen-organism! [uid properties]
-    (reset! fauna (assoc @fauna uid properties)))
-)

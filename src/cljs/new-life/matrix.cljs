@@ -58,6 +58,23 @@
               (conj new-matrix (row-neighborhood (get-in matrix [counter]) x rang)))
             new-matrix))))
 
+(defn flat-neighborhood [matrix x y rang]
+  (flatten (neighborhood matrix x y rang)))
+
+(defn flat->coords [x y idx]
+  "Gets the coordinates of an entry in the flat-neighborhood
+   of [x y]."
+  (let [coords (case idx
+                  0 [(dec x) (dec y)]
+                  1 [x (dec y)]
+                  2 [(inc x) (dec y)]
+                  3 [(dec x) y]
+                  4 [x y]
+                  5 [(inc x) y]
+                  6 [(dec x) (inc y)]
+                  7 [x (inc y)]
+                  8 [(inc x) (inc y)])]
+    coords))
 
 ;;OPERATE ON MATRICES
 (defn sum-matrix-cells [matrix]
