@@ -208,3 +208,8 @@
           (recur (inc y-counter))))))))
 
 
+;;Transformations
+(defn rotate-matrix [m] 
+  "Rotate a matrix clockwise."
+  (vec (apply map vector (reverse m))))
+

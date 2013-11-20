@@ -7,13 +7,14 @@
 (def initial-config
     {:tile-size 8
      :world-size 100
-     :tick 200
-     :reproduction-rate 0.01
+     :tick 50
+     :reproduction-rate 0.75
      :food-rate 20    ;Rate food grows
      :food-amount 10     ;Amount of food per cycle
      :food-boost 40     ;How much energy does full food give?
      :initial-food 40   ;How much food at start?
      :food-range 7    ;How distant can plants be to have an effect?
+     :reproduction-cost 30
     })
 
 (defn list-uids [world]
@@ -77,7 +78,11 @@
 ;;WORLD
 (def world-skeleton
   {:time 0
+   :pause false
    :world-map [];(world/gen-world (initial-config :world-size))
+   :tile-types []
+   :smells []
+   :sounds []
    :fauna {};(world/gen-fauna)
    :sprites {1 food-sprite 2 food-sprite 3 food-sprite}
    :config initial-config
@@ -113,16 +118,33 @@
                 "za" "ze" "zi" "zo" "zu"
                 "s" "n" "l" "y" "ch" "sh"])
 
-(defn generate-name []
-    (let [syls (u/pick-rand-int 1 4)]
-        (loop [counter syls output []]
-            (if (> counter 0)
-                (recur (dec counter) (conj output (syllables (u/pick-rand-int 0 (count syllables)))))
-                (apply str output)))))
+(defn get-syllable []
+  (syllables (u/pick-rand-int 0 (dec (count syllables)))))
 
-(defn add []
-    (+ 1 1))
+(defn get-syllable-list [max-syls]    
+  (let [syls (u/pick-rand-int 1 max-syls)]
+    (loop [counter syls output []]
+      (if (> counter 0)
+       (recur (dec counter) (conj output (get-syllable)))
+        output))))
+
+(defn get-species-name []    
+  (get-syllable-list 4))
+
+(defn get-genus-name []
+  (get-syllable-list 3))
+
+(defn generate-name []
+  [(get-genus-name) (get-species-name)])
+
 
 ;;MOVEMENT
 (defn generate-move-matrix []
-    (mtx/create-weighted-matrix 9 (partial u/pick-rand-int 7 10)))
+    (mtx/create-weighted-matrix 9 (partial u/pick-norm-dist 10 1)))
+
+(def cardinal-directions
+    {0 [0 0]
+     1 [0 -1]
+     2 [1 0]
+     3 [0 1]
+     4 [-1 0]})
