@@ -106,8 +106,9 @@
 (defn initialize-organism [uid tile-size]
     (let [sprite (d/gen-org-sprite tile-size) 
           color [(u/pick-rand-int 0 255) (u/pick-rand-int 0 125) (u/pick-rand-int 0 255) 1]
-          energy-max (u/pick-rand-int 80 120) energy energy-max
-          title (d/generate-name) move-matrix (d/generate-move-matrix)]
+          energy-max (mth/floor (u/pick-norm-dist 100 10)) energy energy-max
+          title (d/generate-name) move-matrix (d/generate-move-matrix)
+          leap-odds (u/pick-norm-dist 2 0.25)]
     {:sprite sprite :color color
      :move-matrix move-matrix 
      :last-move 5
@@ -115,7 +116,9 @@
      :uid uid :alive true :name title
      :senses {:vision 3 :hearing 2 :smell 2}
      :prefs {:food 5 :organism 0}
-     :birthdate 0 :parent [["eve"] []]}))
+     :birthdate 0 :parent [["eve"] []]
+     :sequence [] 
+     :leap-odds leap-odds :leap-length 4}))
 
 (defn deploy-organism [world]
   (let [uid (make-uid)
@@ -150,9 +153,9 @@
         new-world (if (and (get-trait world uid :alive) (< energy 1))
                       (do                        
                         (console/print-to-console (str "The " org-name " went extinct in round " cur-time "!"))
-                        (-> world
+                        (-> world                          
                           (assoc-in [:fauna uid :alive] false) 
-                          (assoc-in [:world-map y x] false)))
+                          (assoc-in [:world-map y x] 0)))
                       world)]
     new-world))
 
@@ -181,8 +184,11 @@
           energy-max (get-trait world uid :energy-max)
           new-energy (if (<= (+ FOOD-BOOST energy) energy-max)
                          (mth/ceil (+ energy FOOD-BOOST))
-                         energy-max)]
-      (assoc-in world [:fauna uid :energy] new-energy)))
+                         energy-max)
+          sequence (get-trait world uid :sequence)]
+      (-> world
+          (assoc-in [:fauna uid :energy] new-energy)
+          (assoc-in [:fauna uid :sequence] (flatten (u/consv [0 0 0 0] sequence))))))
 
 (defn find-food [world uid]
   (let [WORLD-SIZE (get-config world :world-size)
@@ -221,25 +227,27 @@
 (defn grab-targets-from-region [region target]
   (filter #(= (:object %) target) region))
 
-(defn calculate-target-value [region target]
-  (reduce + (map :nearness (grab-targets-from-region region target))))
+(defn value-by-preference [object type prefs]
+  (let [value (:nearness object)]
+    (cond 
+      (= type 0) 0
+      (= type 1) (* value (u/pick-variation (:food prefs)))
+      (= type 2) (* value (/ (u/pick-variation (:food prefs)) 2))
+      (= type 3) (* value (/ (u/pick-variation(:food prefs)) 3))
+      (> type 100) (* value (u/pick-variation (:organism prefs)))
+      )))
 
-(defn calculate-region-value [region]
+(defn calculate-target-value [region target prefs]
+  (reduce + (map #(value-by-preference % target prefs) (grab-targets-from-region region target))))
+
+(defn calculate-region-value [region prefs]
   (let [distinct-targets (set (map :object region))]
-    (reduce + (map #(calculate-target-value region %) distinct-targets))))
-
-#_(defn all-calculate-region [region]
-  (let [targets [food? organism?]]
-    (reduce + (map #(calculate-region-value region %) targets))))
+    (reduce + (map #(calculate-target-value region % prefs) distinct-targets))))
 
 (defn count-region [region target?]
   "Takes a vector and counts the number of targets
   in that vector."
   (count (filter target? region)))
-
-(defn all-count-region [region]
-  (let [targets [food? organism?]]
-    (reduce + (map #(count-region region %) targets))))
 
 (defn get-region [neighbors]
   "Returns a vector containing all the objects in the
@@ -296,13 +304,11 @@
         south (:south regions)
         east (:east regions)
         west (:west regions)]
-    (do
-      (.log js/console (str north south east west))
-      (top-choice
-       {:north (calculate-region-value north)
-        :south (calculate-region-value south)
-        :east (calculate-region-value east)
-        :west (calculate-region-value west)}))))
+    (top-choice
+     {:north (calculate-region-value north prefs)
+      :south (calculate-region-value south prefs)
+      :east (calculate-region-value east prefs)
+      :west (calculate-region-value west prefs)})))
 
 (defn make-choice [world uid]
   (let [vision (get-sense world uid :vision)
@@ -348,21 +354,37 @@
 (defn try-move [world uid] 
   (let [x (get-trait world uid :x) 
         y (get-trait world uid :y)
+        sequence (get-trait world uid :sequence)
+        leap-odds (get-trait world uid :leap-odds)
         ;new-direction (walk-random world uid)
         ;new-x (directed-move-x world x new-direction) 
         ;new-y (directed-move-y world y new-direction)
-        new-coords (hit-wall world (make-choice world uid));(walk-cardinal world [x y])
+        new-coords 
+          (if (seq sequence)
+              (mth/add-pairs [x y] (d/cardinal-directions (first sequence)))
+              (hit-wall world (make-choice world uid)));(walk-cardinal world [x y])
         new-x (first new-coords)
         new-y (second new-coords)
         object (get-object world new-x new-y)]
-    (if (and (= object 0)
-             (or (not (= new-x x)) 
-             (not (= new-y y))))
+    (if (u/roll-against leap-odds)
+      (let [leap (u/pick-rand-int 1 4)]
+        (assoc-in world [:fauna uid :sequence] 
+          (flatten (conj sequence 
+                         (vec (repeat (get-trait world uid :leap-length) leap))))))
+      (if (and (= object 0)
+               (or (not (= new-x x)) 
+               (not (= new-y y))))
         (-> world
-          (set-tile new-x new-y uid) ;Claim new tile
-          (set-trait uid :x new-x)
-          (set-trait uid :y new-y)
-          (clear-tile x y));Tell world you've left 
+            (set-tile new-x new-y uid) ;Claim new tile
+            (set-trait uid :x new-x)
+            (set-trait uid :y new-y)
+            (clear-tile x y));Tell world you've left 
+      world))))
+
+(defn update-sequence [world uid]
+  (let [sequence (get-trait world uid :sequence)]
+    (if (seq sequence)
+        (assoc-in world [:fauna uid :sequence] (into [] (rest sequence)))
         world)))
 
 
@@ -443,6 +465,18 @@
             (= mutation 1) [genus (conj species (d/get-syllable))]
             (= mutation -1) [genus (subvec species 0 (dec syls))]))))))
 
+(defn mutate-prefs [prefs]
+  (let [food (mth/round (u/pick-norm-dist 0 0.7))
+        organism (mth/round (u/pick-norm-dist 0 0.7))]
+    {:food (+ (:food prefs) food)
+     :organism (+ (:organism prefs) organism)}))
+
+(defn mutate-leap-odds [leap-odds]
+  (+ leap-odds (u/pick-norm-dist 0 0.25)))
+
+(defn mutate-leap-length [leap-length]
+  (+ leap-length (mth/round (u/pick-norm-dist 0 0.5))))
+
 (defn mutate-move-matrix [move-matrix]
   move-matrix)
 
@@ -454,7 +488,11 @@
         energy-max (:energy-max parent) energy energy-max
         title (:name parent) 
         move-matrix (:move-matrix parent)
-        birthdate (:time world)]
+        birthdate (:time world)
+        senses (:senses parent)
+        prefs (:prefs parent)
+        leap-odds (:leap-odds parent)
+        leap-length (:leap-length parent)]
     {:sprite (mutate-sprite sprite) 
      :color (mutate-color color)
      :move-matrix (mutate-move-matrix move-matrix) 
@@ -462,10 +500,14 @@
      :energy-max (mutate-energy-max energy-max) :energy energy
      :uid new-uid :alive true 
      :name (mutate-name title)
-     :birthdate birthdate :parent title}))
+     :prefs (mutate-prefs prefs) :senses senses
+     :birthdate birthdate :parent title
+     :sequence [] :leap-odds (mutate-leap-odds leap-odds)
+     :leap-length (mutate-leap-length leap-length)}))
 
 (defn try-reproduce [world uid]
-  (if (u/roll-against (get-in world [:config :reproduction-rate]))
+  (if (and (u/roll-against (get-in world [:config :reproduction-rate]))
+           (> (get-trait world uid :energy) 40))
       (let [organism (mutate-organism world uid)
             par-x (get-trait world uid :x)
             par-y (get-trait world uid :y)

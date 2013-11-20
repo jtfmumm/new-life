@@ -27,17 +27,18 @@
   (if (> uid 100) ;;Is this an organism?
     (let [new-world (world/check-energy world uid)]
       (if (world/check-life new-world uid)
-        (-> new-world            
-            (world/use-energy uid)
-            (world/find-food uid)    ;<<<<<<<<<<<-----------<<<<<<<<<<<<<<<--------------- PROBLEM, 
-            (world/try-move uid)
-            (world/try-reproduce uid)
-            )
+          (-> new-world            
+              (world/use-energy uid)
+              (world/find-food uid)   
+              (world/try-move uid)
+              (world/try-reproduce uid)
+              (world/update-sequence uid)
+              )
         new-world))
     world))  ;;If not an organism, return unchanged 
 
 (defn update-organisms [world]
-    (reduce #(if-not (= %2 nil) (organism-upkeep %2 %1) %1) world (d/list-uids world)))
+    (reduce #(if-not (= %2 nil) (organism-upkeep %2 %1) %1) world (d/list-live-uids world)))
 
 (defn info-sprite [world uid]
   (let [TILE-SIZE (world/get-config world :tile-size)]
@@ -51,12 +52,20 @@
             move-matrix (world/get-trait world uid :move-matrix)
             birthdate (world/get-trait world uid :birthdate)
             parent (world/format-name (world/get-trait world uid :parent))
+            prefs (world/get-trait world uid :prefs)
+            sequence (world/get-trait world uid :sequence)
+            leap-odds (world/get-trait world uid :leap-odds)
             ]
         (console/update-info (str "<p><br>Name: the " title 
                                   "<br>Energy: " energy 
                                   "<br>Max Energy: " energy-max
+                                  "<br>Movement Preferences: "
+                                  "<br>food->" (:food prefs) 
+                                  "<br>organisms->" (:organism prefs) 
                                   "<br>Birthdate: " birthdate
                                   "<br>Parent: " parent
+                                  "<br>Sequence: " sequence
+                                  "<br>Leap Odds: " leap-odds
                                   ;"<br>Movement Matrix:"
                                   ;"<br>" (console/display-move-matrix move-matrix)
                                   "</p>")

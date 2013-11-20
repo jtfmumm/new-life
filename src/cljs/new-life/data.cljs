@@ -8,7 +8,7 @@
     {:tile-size 8
      :world-size 100
      :tick 50
-     :reproduction-rate 0.75
+     :reproduction-rate 0.5
      :food-rate 20    ;Rate food grows
      :food-amount 10     ;Amount of food per cycle
      :food-boost 40     ;How much energy does full food give?
@@ -17,8 +17,14 @@
      :reproduction-cost 30
     })
 
-(defn list-uids [world]
-    (keys (:fauna world)))
+(defn list-live-uids [world]
+  (let [fauna (:fauna world)]
+   (filter #(:alive (fauna %)) (keys fauna))))
+
+(def objects 
+  {1 :food
+   2 :food
+   3 :food})
 
 ;;TILES
 (def tile-types 

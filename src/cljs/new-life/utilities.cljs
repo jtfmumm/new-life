@@ -68,6 +68,12 @@
         pick (pick-rand-int 0 high)]
     (items pick)))
 
+(defn pick-variation [value]
+  (cond
+    (= value 0) 0
+    (> value 0) (pick-rand-int 0 value)
+    (< value 0) (pick-rand-int value 0)))
+
 ;(defn rand-ints [low high]
 ;  (cons (pick-rand-int low high) (lazy-seq (get-random-ints low high))))
 
