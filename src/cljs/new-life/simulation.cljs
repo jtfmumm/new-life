@@ -15,7 +15,7 @@
   (-> d/world-skeleton
       (assoc-in [:world-map] (world/gen-world-map 100))
       (assoc-in [:tile-types] (world/gen-world-tile-types 100))
-      ((partial world/gen-fauna 5))
+      ((partial world/gen-fauna 20))
       (world/initialize-food)
       (world/gen-food))) ;;Initial organisms
 
@@ -29,10 +29,12 @@
       (if (world/check-life new-world uid)
           (-> new-world            
               (world/use-energy uid)
-              (world/find-food uid)   
+              (world/find-food uid)
               (world/try-move uid)
+              (world/find-prey uid)   
               (world/try-reproduce uid)
               (world/update-sequence uid)
+              (world/update-rest-counter uid)
               )
         new-world))
     world))  ;;If not an organism, return unchanged 
@@ -55,19 +57,24 @@
             prefs (world/get-trait world uid :prefs)
             sequence (world/get-trait world uid :sequence)
             leap-odds (world/get-trait world uid :leap-odds)
+            rest-counter (world/get-trait world uid :rest-counter)
+            rest-amount (world/get-trait world uid :rest-amount)
+            strength (world/get-trait world uid :strength)
+            aggression (world/get-trait world uid :aggression)
             ]
         (console/update-info (str "<p><br>Name: the " title 
                                   "<br>Energy: " energy 
                                   "<br>Max Energy: " energy-max
                                   "<br>Movement Preferences: "
-                                  "<br>food->" (:food prefs) 
-                                  "<br>organisms->" (:organism prefs) 
+                                  "<br>...food->" (:food prefs) 
+                                  "<br>...kin->" (:kin prefs) 
+                                  "<br>...non-kin (aggression)->" (:non-kin prefs)
+                                  "<br>Strength: " strength 
                                   "<br>Birthdate: " birthdate
                                   "<br>Parent: " parent
                                   "<br>Sequence: " sequence
                                   "<br>Leap Odds: " leap-odds
-                                  ;"<br>Movement Matrix:"
-                                  ;"<br>" (console/display-move-matrix move-matrix)
+                                  "<br>Rest Countdown: " rest-counter
                                   "</p>")
                               color
                               sprite 
@@ -122,7 +129,8 @@
       (go
         (loop [world world]
           (world/clear-screen (get-in world [:config]))
-          (world/draw-world world)  
+          (world/draw-world world)
+          (world/highlight-selected world)  
           ;;Process events
           (if (:pause world)
             (if-let [event (<! (nonparking c-events))]

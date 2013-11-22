@@ -100,6 +100,30 @@
 (defn gen-org-sprite [size]
     (mtx/create-random-matrix size (partial u/pick-weighted-int 0 1 [2 1])))
 
+(defn encircle [sprite]
+  (let [size (count sprite)
+        edge (dec size)]
+    (-> sprite
+        (assoc 0 (vec (repeat size 1)))
+        (assoc edge (vec (repeat size 1)))
+        mtx/rotate-matrix        
+        (assoc 0 (vec (repeat size 1)))
+        (assoc edge (vec (repeat size 1)))
+        mtx/rotate-matrix
+        mtx/rotate-matrix
+        mtx/rotate-matrix)))
+
+(defn sprite-edge-1d [sprite x]
+  (let [edge (dec (count sprite))]
+  (cond
+    (< x 0) 0
+    (> x edge) edge
+    :else x)))
+
+(defn sprite-edge [sprite coords]
+  (let [[x y] coords]
+    [(sprite-edge-1d sprite x) (sprite-edge-1d sprite y)]))
+
 
 ;;NAMES
 (def syllables ["a" "e" "i" "o" "u"
@@ -149,8 +173,26 @@
     (mtx/create-weighted-matrix 9 (partial u/pick-norm-dist 10 1)))
 
 (def cardinal-directions
-    {0 [0 0]
-     1 [0 -1]
-     2 [1 0]
-     3 [0 1]
-     4 [-1 0]})
+  {0 [0 0]
+   1 [0 -1]
+   2 [1 0]
+   3 [0 1]
+   4 [-1 0]})
+
+(def neighbors
+  {0 [-1 -1]
+   1 [-1 0]
+   2 [-1 1]
+   3 [0 -1]
+   4 [0 0]
+   5 [0 1]
+   6 [1 -1]
+   7 [1 0]
+   8 [1 1]})
+
+
+;;HIGHLIGHTING
+(defn highlight-sprite [tile-size]
+  (encircle (empty-sprite tile-size)))
+
+(def highlight-color [0 0 0 1])

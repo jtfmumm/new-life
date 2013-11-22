@@ -39,6 +39,9 @@
         fullname (apply str (flatten [genus " " species]))]
   fullname))
 
+(defn get-genus [world uid]
+  (first (get-in world [:fauna uid :name])))
+
 (defn format-name [title]
   (let [rawname title
         genus (first rawname)
@@ -80,6 +83,22 @@
 (defn lake? [target]
   (= target :lake))
 
+(defn hungry? [world uid]
+  (let [org (get-in world [:fauna uid])
+        energy-max (:energy-max org)
+        energy (:energy org)]
+    (if (< energy (- energy-max 30))
+        true
+        false)))
+
+(defn non-kin? [world target uid]
+  (let [target (u/unnil target)]
+    (if (> target 100)
+      (let [genus (get-genus world uid)
+            other-genus (get-genus world target)] 
+        (if (= other-genus genus) false true))
+      false)))  
+
 
 ;;WORLD
 (defn gen-world-map [world-size]
@@ -108,17 +127,22 @@
           color [(u/pick-rand-int 0 255) (u/pick-rand-int 0 125) (u/pick-rand-int 0 255) 1]
           energy-max (mth/floor (u/pick-norm-dist 100 10)) energy energy-max
           title (d/generate-name) move-matrix (d/generate-move-matrix)
-          leap-odds (u/pick-norm-dist 2 0.25)]
+          leap-odds (u/pick-norm-dist 1 0.25)]
     {:sprite sprite :color color
      :move-matrix move-matrix 
      :last-move 5
      :energy-max energy-max :energy energy
      :uid uid :alive true :name title
      :senses {:vision 3 :hearing 2 :smell 2}
-     :prefs {:food 5 :organism 0}
+     :strength (mth/round (u/pick-norm-dist 50 2))
+     :prefs {:food 5 
+             :kin 0 
+             :non-kin (u/pick-rand-item [-3 3])}
      :birthdate 0 :parent [["eve"] []]
      :sequence [] 
-     :leap-odds leap-odds :leap-length 4}))
+     :leap-odds leap-odds :leap-length 12
+     :rest-max 7 :rest-counter (u/pick-rand-int 6 8)
+     :evasion (u/pick-norm-dist 2 1)}))
 
 (defn deploy-organism [world]
   (let [uid (make-uid)
@@ -152,7 +176,7 @@
         cur-time (:time world)
         new-world (if (and (get-trait world uid :alive) (< energy 1))
                       (do                        
-                        (console/print-to-console (str "The " org-name " went extinct in round " cur-time "!"))
+                        ;(console/print-to-console (str "The " org-name " went extinct in round " cur-time "!"))
                         (-> world                          
                           (assoc-in [:fauna uid :alive] false) 
                           (assoc-in [:world-map y x] 0)))
@@ -160,19 +184,39 @@
     new-world))
 
 (defn use-energy [world uid]
-  (update-in world [:fauna uid :energy] dec))
+  (let [rest-counter (get-in world [:fauna uid :rest-counter])]
+    (if-not (= rest-counter 0)
+      (update-in world [:fauna uid :energy] dec)
+      world)))
 
 
 (defn find-nearby [world-map x y pred?]
   "Looks at immediate neighbors of a coordinate
    to see if one satisfies pred.  
    Returns the first target found along with its
-   coordinates (in a vector of the form [x y]."
+   coordinates (in a vector of the form [x y] if found.
+   Otherwise, returns false."
   (let [neighbors (into [] (mtx/flat-neighborhood world-map x y 1))
         poss-moves 9]
     (loop [counter 0]
       (if (< counter poss-moves)
         (if (pred? (neighbors counter))
+            (vector (neighbors counter) (mtx/flat->coords x y counter))
+            (recur (inc counter)))
+        false))))
+
+(defn find-nearby-prey [world x y uid]
+  "Looks at immediate neighbors of a coordinate
+   to see if one satisfies pred.  
+   Returns the first target found along with its
+   coordinates (in a vector of the form [x y] if found.
+   Otherwise, returns false."
+  (let [world-map (:world-map world)
+        neighbors (into [] (mtx/flat-neighborhood world-map x y 1))
+        poss-moves 9]
+    (loop [counter 0]
+      (if (< counter poss-moves)
+        (if (non-kin? world (neighbors counter) uid)
             (vector (neighbors counter) (mtx/flat->coords x y counter))
             (recur (inc counter)))
         false))))
@@ -191,19 +235,61 @@
           (assoc-in [:fauna uid :sequence] (flatten (u/consv [0 0 0 0] sequence))))))
 
 (defn find-food [world uid]
-  (let [WORLD-SIZE (get-config world :world-size)
-        x (get-trait world uid :x) 
+  (let [x (get-trait world uid :x) 
         y (get-trait world uid :y)
         world-map (:world-map world) 
         food (find-nearby world-map x y food?)]
     (if food
       (let [target (first food)
             [x y] (second food)]
-        (-> world
-            (clear-tile x y)
-            (eat-up uid target)
-            ))
+        (if (hungry? world uid)
+          (-> world
+              (clear-tile x y)
+              (eat-up uid target))
+          world))
       world)))  
+
+(defn attack [world uid target]
+  (if (> target 100)
+    (loop [world world]
+      (if (<= (u/pick-variation (mth/round (/ (get-trait world target :evasion) 2)))
+              0)
+        (let [aggressor (get-name world uid)
+              prey (get-name world target)
+              strength (get-in world [:fauna uid :strength])
+              prey-strength (get-in world [:fauna target :strength])
+              damage strength ;(u/pick-rand-int 0 strength)
+              reply 0;(mth/round (/ (u/pick-rand-int 0 prey-strength) 2))
+              new-world (-> world
+                            (update-in [:fauna target :energy] - damage))
+              potential (mth/round (get-in world [:fauna target :energy-max]))]
+          (if-not (> (get-in new-world [:fauna target :energy]) 0)
+                  (do
+                    (console/print-to-console (str "The " prey " was killed by the " aggressor " in round " (:time world) "!"))
+                    (-> new-world
+                        (update-in [:fauna uid :energy] + potential)))
+                  (recur new-world)))
+        (assoc-in world [:fauna target :sequence] 
+          (u/consv 
+            (repeat 10 4 #_(u/pick-rand-int 1 4)) 
+            (get-trait world target :sequence)))))
+    world))
+
+(defn find-prey [world uid]
+  (if (> (get-in world [:fauna uid :prefs :non-kin]) 0) ;;ALMOSTSURE THING ;(> (u/pick-variation (get-in world [:fauna uid :non-kin])) 0)
+    (let [x (get-trait world uid :x) 
+          y (get-trait world uid :y)
+          world-map (:world-map world) 
+          prey (find-nearby-prey world x y uid)
+          ]
+      (if prey
+        (let [target (first prey)]
+          (if (> (u/pick-rand-int 0 100) 1) ;;ALMOSTSURE THING ;;(hungry? world uid)
+            (-> world
+                (attack uid target))
+            world))
+        world))
+    world)) 
 
 
 ;;STRATEGY
@@ -224,25 +310,35 @@
     (cardinal-hit-wall world (mth/add-pairs coords transform))))
 
 
+(defn evaluate-food [world uid food-type total]
+  (let [attitude (get-in world [:fauna uid :prefs :food])]
+    (if (hungry? world uid)
+      (* total (/ (u/pick-variation attitude) food-type))
+      0)))
+
 (defn grab-targets-from-region [region target]
   (filter #(= (:object %) target) region))
 
-(defn value-by-preference [object type prefs]
-  (let [value (:nearness object)]
+(defn value-by-preference [world object type uid]
+  (let [value (:nearness object)
+        prefs (get-trait world uid :prefs)
+        genus (get-genus world uid)]
     (cond 
       (= type 0) 0
-      (= type 1) (* value (u/pick-variation (:food prefs)))
-      (= type 2) (* value (/ (u/pick-variation (:food prefs)) 2))
-      (= type 3) (* value (/ (u/pick-variation(:food prefs)) 3))
-      (> type 100) (* value (u/pick-variation (:organism prefs)))
+      (u/btwn? type 0 4) (evaluate-food world uid type value)
+      (> type 100) 
+        (let [other-genus (get-genus world type)] 
+          (if (= other-genus genus)
+            (* value (u/pick-variation (:kin prefs)))
+            (* value (u/pick-variation (+ 2 (:non-kin prefs))))))
       )))
 
-(defn calculate-target-value [region target prefs]
-  (reduce + (map #(value-by-preference % target prefs) (grab-targets-from-region region target))))
+(defn calculate-target-value [world region target uid]
+  (reduce + (map #(value-by-preference world % target uid) (grab-targets-from-region region target))))
 
-(defn calculate-region-value [region prefs]
+(defn calculate-region-value [world region uid]
   (let [distinct-targets (set (map :object region))]
-    (reduce + (map #(calculate-target-value region % prefs) distinct-targets))))
+    (reduce + (map #(calculate-target-value world region % uid) distinct-targets))))
 
 (defn count-region [region target?]
   "Takes a vector and counts the number of targets
@@ -298,24 +394,23 @@
     (u/map-max-key values) (u/map-max-key values) 
     :else (u/pick-rand-item (into [] (u/max-keys values)))))
 
-(defn weight-neighbors [neighbors prefs]
+(defn weight-neighbors [world neighbors uid]
   (let [regions (neighbor-regions neighbors)
         north (:north regions)
         south (:south regions)
         east (:east regions)
         west (:west regions)]
     (top-choice
-     {:north (calculate-region-value north prefs)
-      :south (calculate-region-value south prefs)
-      :east (calculate-region-value east prefs)
-      :west (calculate-region-value west prefs)})))
+     {:north (calculate-region-value world north uid)
+      :south (calculate-region-value world south uid)
+      :east (calculate-region-value world east uid)
+      :west (calculate-region-value world west uid)})))
 
 (defn make-choice [world uid]
   (let [vision (get-sense world uid :vision)
-        prefs (get-trait world uid :prefs)
         x (get-trait world uid :x) y (get-trait world uid :y)
         neighbors (mtx/neighborhood (:world-map world) x y vision)
-        weighting (weight-neighbors neighbors prefs)
+        weighting (weight-neighbors world neighbors uid)
         roll (u/pick-rand-int 0 100)]
     (case weighting
       :north [x (dec y)]
@@ -356,9 +451,8 @@
         y (get-trait world uid :y)
         sequence (get-trait world uid :sequence)
         leap-odds (get-trait world uid :leap-odds)
-        ;new-direction (walk-random world uid)
-        ;new-x (directed-move-x world x new-direction) 
-        ;new-y (directed-move-y world y new-direction)
+        rest-counter (get-trait world uid :rest-counter)
+        rest-amount (get-trait world uid :rest-amount)
         new-coords 
           (if (seq sequence)
               (mth/add-pairs [x y] (d/cardinal-directions (first sequence)))
@@ -366,26 +460,36 @@
         new-x (first new-coords)
         new-y (second new-coords)
         object (get-object world new-x new-y)]
-    (if (u/roll-against leap-odds)
-      (let [leap (u/pick-rand-int 1 4)]
-        (assoc-in world [:fauna uid :sequence] 
-          (flatten (conj sequence 
-                         (vec (repeat (get-trait world uid :leap-length) leap))))))
-      (if (and (= object 0)
-               (or (not (= new-x x)) 
-               (not (= new-y y))))
-        (-> world
-            (set-tile new-x new-y uid) ;Claim new tile
-            (set-trait uid :x new-x)
-            (set-trait uid :y new-y)
-            (clear-tile x y));Tell world you've left 
-      world))))
+    (if (= rest-counter 0)
+      (assoc-in world [:fauna uid :sequence] (u/consv 0 sequence))
+      (if (= 1 2) ;;IMPOSSIBLE
+        (let [leap (u/pick-rand-int 1 4)]
+          (assoc-in world [:fauna uid :sequence] 
+            (flatten (conj sequence 
+                           (vec (repeat (get-trait world uid :leap-length) leap))))))
+        (if (and (= object 0)
+                 (or (not (= new-x x)) 
+                 (not (= new-y y))))
+          (-> world
+              (set-tile new-x new-y uid) ;Claim new tile
+              (set-trait uid :x new-x)
+              (set-trait uid :y new-y)
+              (clear-tile x y));Tell world you've left 
+          world))
+      world)))
 
 (defn update-sequence [world uid]
   (let [sequence (get-trait world uid :sequence)]
     (if (seq sequence)
         (assoc-in world [:fauna uid :sequence] (into [] (rest sequence)))
         world)))
+
+(defn update-rest-counter [world uid]
+  (let [rest-counter (get-trait world uid :rest-counter)
+        rest-max (get-trait world uid :rest-max)]
+    (if (> rest-counter -1)
+      (update-in world [:fauna uid :rest-counter] dec)
+      (assoc-in world [:fauna uid :rest-counter] rest-max))))
 
 
 ;;FOOD
@@ -438,7 +542,19 @@
   false)
 
 (defn mutate-sprite [sprite]
-  sprite)
+  (let [tile-size (count sprite)
+        edge (- tile-size 2)
+        pick-x (u/pick-rand-int 1 edge) 
+        pick-y (u/pick-rand-int 1 edge)
+        found (find-nearby sprite pick-x pick-y #(= % 1))]
+  (if found
+    (let [neighbor (u/pick-rand-int 0 8)
+          transform (d/neighbors neighbor)
+          new-spot (d/sprite-edge sprite (mth/add-pairs (second found) transform))
+          [x y] new-spot
+          new-pixel (if (= ((sprite y) x) 0) 1 0)] 
+      (assoc-in sprite [y x] new-pixel))
+    sprite)))
 
 (defn mutate-color [color]
   (let [[r g b a] color
@@ -467,15 +583,25 @@
 
 (defn mutate-prefs [prefs]
   (let [food (mth/round (u/pick-norm-dist 0 0.7))
-        organism (mth/round (u/pick-norm-dist 0 0.7))]
+        kin (mth/round (u/pick-norm-dist 0 0.7))
+        non-kin (mth/round (u/pick-norm-dist 0 1))
+        ]
     {:food (+ (:food prefs) food)
-     :organism (+ (:organism prefs) organism)}))
+     :kin 0
+     :non-kin (+ (:non-kin prefs) non-kin)
+     }))
 
 (defn mutate-leap-odds [leap-odds]
   (+ leap-odds (u/pick-norm-dist 0 0.25)))
 
 (defn mutate-leap-length [leap-length]
-  (+ leap-length (mth/round (u/pick-norm-dist 0 0.5))))
+  (mth/abs (+ leap-length (mth/round (u/pick-norm-dist 0 0.5)))))
+
+(defn mutate-rest-max [rest-max]
+  (mth/abs (+ rest-max (mth/round (u/pick-norm-dist 0 1)))))
+
+(defn mutate-strength [strength]
+  (mth/abs (+ strength (mth/round (u/pick-norm-dist 0 1)))))
 
 (defn mutate-move-matrix [move-matrix]
   move-matrix)
@@ -492,7 +618,10 @@
         senses (:senses parent)
         prefs (:prefs parent)
         leap-odds (:leap-odds parent)
-        leap-length (:leap-length parent)]
+        leap-length (:leap-length parent)
+        rest-max (:rest-max parent)
+        strength (:strength parent)
+        evasion (:evasion parent)]
     {:sprite (mutate-sprite sprite) 
      :color (mutate-color color)
      :move-matrix (mutate-move-matrix move-matrix) 
@@ -503,7 +632,11 @@
      :prefs (mutate-prefs prefs) :senses senses
      :birthdate birthdate :parent title
      :sequence [] :leap-odds (mutate-leap-odds leap-odds)
-     :leap-length (mutate-leap-length leap-length)}))
+     :leap-length (mutate-leap-length leap-length)
+     :rest-max (mutate-rest-max rest-max)
+     :rest-counter rest-max
+     :strength (mutate-strength strength)
+     :evasion (mth/round (+ evasion (u/pick-norm-dist 0 1)))}))
 
 (defn try-reproduce [world uid]
   (if (and (u/roll-against (get-in world [:config :reproduction-rate]))
@@ -537,6 +670,15 @@
   (let [world-map (:world-map world)
         tile-size (get-in world [:config :tile-size])]
   (mtx/walk-matrix-by-coordinates draw-tile world-map tile-size world)))
+
+(defn highlight-selected [world]
+  (let [target @console/current-info
+        x (get-in world [:fauna target :x])
+        y (get-in world [:fauna target :y])
+        tile-size (get-config world :tile-size)]
+    (if (get-trait world target :alive)
+      (cvs/draw-color-matrix (d/highlight-sprite tile-size)
+        :x (* tile-size x) :y (* tile-size y) :size tile-size :color d/highlight-color :ctx cvs/world-foreground))))
 
 (defn draw-tile-background [x y tile & f-args]
   (let [[tile-size sprite] f-args
