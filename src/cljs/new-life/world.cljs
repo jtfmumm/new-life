@@ -125,25 +125,33 @@
 (defn initialize-organism [uid tile-size]
     (let [sprite (d/gen-org-sprite tile-size) 
           color [(u/pick-rand-int 0 255) (u/pick-rand-int 0 125) (u/pick-rand-int 0 255) 1]
-          energy-max (mth/floor (u/pick-norm-dist 100 10)) energy energy-max
+          energy-max (mth/floor (u/pick-norm-dist 100 5)) energy energy-max
           title (d/generate-name) move-matrix (d/generate-move-matrix)
-          leap-odds (u/pick-norm-dist 1 0.25)]
+          leap-odds (u/pick-norm-dist 1 0.25)
+          hunger-count (mth/round (u/pick-norm-dist 40 5))
+          hunger-wander (mth/round (u/pick-norm-dist 10 2))
+          hunger-wander-odds (u/pick-norm-dist 50 5)]
     {:sprite sprite :color color
      :move-matrix move-matrix 
      :last-move 5
      :energy-max energy-max :energy energy
      :uid uid :alive true :name title
      :senses {:vision 4 :hearing 2 :smell 2}
-     :strength (mth/round (u/pick-norm-dist 50 2))
-     :prefs {:food 5 
+     :strength (mth/round (u/pick-norm-dist 50 5))
+     :prefs {:food 4 
              :kin 0 
-             :non-kin (u/pick-rand-item [-3 3])}
+             :non-kin (u/pick-rand-item [-3 3])
+             :shadow-prey (u/pick-norm-dist 0 2)}
      :birthdate 0 :parent [["eve"] []]
      :sequence [] 
+     :hunger-count-max hunger-count 
+     :hunger-count hunger-count 
+     :hunger-wander hunger-wander
+     :hunger-wander-odds hunger-wander-odds
      :leap-odds leap-odds :leap-length 12
-     :rest-max 7 :rest-counter (u/pick-rand-int 6 8)
+     :rest-max 7 :rest-counter (u/pick-rand-int 6 10)
      :evasion (u/pick-norm-dist 2 1)
-     :marker (vec (repeatedly 9 #(u/pick-rand-int 0 9)))}))
+     :marker [(u/pick-rand-int 0 10000) (u/pick-rand-int 0 10000) (u/pick-rand-int 0 10000)]}))
 
 (defn deploy-organism [world]
   (let [uid (make-uid)
@@ -236,6 +244,7 @@
           sequence (get-trait world uid :sequence)]
       (-> world
           (assoc-in [:fauna uid :energy] new-energy)
+          (assoc-in [:fauna uid :hunger-count] (get-trait world uid :hunger-count-max))
           (assoc-in [:fauna uid :sequence] (flatten (u/consv [0 0 0 0] sequence))))))
 
 (defn find-food [world uid]
@@ -253,6 +262,18 @@
           world))
       world)))  
 
+(defn check-hunger [world uid]
+  (let [hunger-amount (get-trait world uid :hunger-wander)
+        odds (get-trait world uid :mutate-hunger-wander-odds)
+        sequence (get-trait world uid :sequence)]
+  (if (<= (get-trait world uid :hunger-count) 0)
+    (if (u/roll-against odds)
+      (-> world 
+          (assoc-in [:fauna uid :sequence] (vec (flatten (conj sequence (repeat hunger-amount (u/pick-rand-int 1 4))))))
+          (assoc-in [:fauna uid :hunger-count] (+ hunger-amount (get-trait world uid :hunger-count-max))))
+      (assoc-in world [:fauna uid :hunger-count] (get-trait world uid :hunger-count-max)))
+    (update-in world [:fauna uid :hunger-count] dec))))
+
 (defn attack [world uid target]
   (if (> target 100)
     (loop [world world]
@@ -262,7 +283,8 @@
           world ;;The aggressor is killed      
           (let [aggressor (get-name world uid)
                 energy (get-trait world uid :energy)
-                energy-max2 (* 2 (get-trait world uid :energy-max))
+                energy-max15 (mth/round (* 1.5 (get-trait world uid :energy-max)))
+                energy-max (get-trait world uid :energy-max)
                 prey (get-name world target)
                 strength (get-in world [:fauna uid :strength])
                 prey-strength (get-in world [:fauna target :strength])
@@ -276,11 +298,13 @@
                       (console/print-to-console (str "The " prey " was killed by the " aggressor " in round " (:time world) "!"))
                       (let [energy (get-trait world uid :energy)
                             new-world (assoc-in new-world [:fauna target :energy] 0)]
-                        (if (> (+ potential energy) energy-max2)
+                        (if (> (+ potential energy) energy-max)
                           (-> new-world
-                              (assoc-in [:fauna uid :energy] energy-max2)))
+                              (assoc-in [:fauna uid :hunger-count] (get-trait world uid :hunger-count-max))
+                              (assoc-in [:fauna uid :energy] energy-max))
                           (-> new-world
-                              (update-in [:fauna uid :energy] + potential))))
+                              (assoc-in [:fauna uid :hunger-count] (get-trait world uid :hunger-count-max))
+                              (update-in [:fauna uid :energy] + potential)))))
                     (recur 
                       (-> new-world
                           (update-in [:fauna uid :energy] - reply))))))
@@ -299,7 +323,7 @@
           ]
       (if prey
         (let [target (first prey)]
-          (if (> (u/pick-rand-int 0 100) 1) ;;ALMOSTSURE THING ;;(hungry? world uid)
+          (if (hungry? world uid)
             (-> world
                 (attack uid target))
             world))
@@ -344,8 +368,14 @@
       (> type 100) 
         (let [other-genus (get-genus world type)] 
           (if (= other-genus genus)
-            (* value (u/pick-variation (:kin prefs)))
-            (* value (u/pick-variation (+ 2 (:non-kin prefs))))))
+            (if (> (mth/round (u/pick-variation (/ (:kin prefs) 10))) 0)
+                (* value (u/pick-variation (:kin prefs)))
+                0)
+            (if (> (:non-kin prefs) 0)
+              (if (hungry? world uid)
+                (* value (u/pick-variation (+ 2 (:non-kin prefs)))) 
+                (* value (u/pick-variation (:shadow-prey prefs))))
+              (* value (* 2 (:non-kin prefs))))))
       )))
 
 (defn calculate-target-value [world region target uid]
@@ -360,7 +390,26 @@
   in that vector."
   (count (filter target? region)))
 
-(defn get-region [neighbors]
+(defn get-region [neighbors direction]
+  (let [radius (count neighbors)
+        dir-radius (case direction
+                      :north (- radius)
+                      :east (- radius)
+                      :south (- radius)
+                      :west (- radius))
+        axis (case direction
+                :north "y"
+                :east "x"
+                :south "y"
+                :west "x")
+        indices (mtx/indices-by-region dir-radius axis)
+        center [(mth/abs radius) (mth/abs radius)]]
+    (mapv #(let [[x y] (mth/add-pairs center %)]
+              {:object ((neighbors y) x) :nearness (/ 1 proximity)})
+      indices)))
+;Use range from 0 to radius for indices
+
+(defn get-region-old [neighbors]
   "Returns a vector containing all the objects in the
   top triangular region of the input matrix.  Each
   object is represented as a map containing: 
@@ -556,6 +605,12 @@
 
 
 ;;REPRODUCTION
+(defn comp-markers [old-marker new-marker]
+  (let [x (- (first old-marker) (first new-marker))
+        y (- (second old-marker) (second new-marker))
+        z (- (first (rest (rest old-marker))) (first (rest (rest new-marker))))]
+  (mth/sqrt (+ (* x x) (* y y) (* z z))))) ;;3-dimensional Euclidean distance
+
 (defn mutate-trait [trait]
   false)
 
@@ -600,13 +655,14 @@
             (= mutation -1) [genus (subvec species 0 (dec syls))]))))))
 
 (defn mutate-prefs [prefs]
-  (let [food (mth/round (u/pick-norm-dist 0 0.7))
-        kin (mth/round (u/pick-norm-dist 0 0.7))
+  (let [food (mth/abs (mth/round (u/pick-norm-dist 0 1)))
+        kin (mth/round (u/pick-norm-dist 0 1))
         non-kin (mth/round (u/pick-norm-dist 0 1))
         ]
     {:food (+ (:food prefs) food)
-     :kin 0
+     :kin (+ (:kin prefs) kin)
      :non-kin (+ (:non-kin prefs) non-kin)
+     :shadow-prey (mth/round (+ (:shadow-prey prefs) (u/pick-norm-dist 0 1)))
      }))
 
 (defn mutate-leap-odds [leap-odds]
@@ -625,16 +681,38 @@
   move-matrix)
 
 (defn mutate-marker [marker]
-  (let [digit (u/pick-rand-int 0 8)
-        change (u/pick-rand-item [-1 1])]
-    (assoc marker digit (+ (marker digit) change))))
+  (map #(+ % (u/pick-norm-dist 0 10)) marker))
+
+(defn mutate-hunger-count-max [hunger-count]
+  (mth/round (+ hunger-count (u/pick-norm-dist 0 2))))
+
+(defn mutate-hunger-wander [hunger-wander]
+  (mth/round (+ hunger-wander (u/pick-norm-dist 0 2))))
+
+(defn mutate-hunger-wander-odds [hunger-wander-odds]
+  (mth/round (+ hunger-wander-odds (u/pick-norm-dist 0 2))))
+
+(defn mutate-shadow-prey [shadow-prey]
+  )
+
+(defn test-drift [marker mutations]
+  (let [new-marker (vec (u/self-pipe marker mutate-marker 100))]
+    (comp-markers new-marker marker)))
+
+(defn test-two-drifts [marker1 marker2 mutations]
+  (let [new-marker1 (vec (u/self-pipe marker1 mutate-marker mutations))
+        new-marker2 (vec (u/self-pipe marker2 mutate-marker mutations))]
+    (println (str "Self for 1: " (mth/floor (comp-markers marker1 new-marker1))))
+    (println (str "Self for 2: " (mth/floor (comp-markers marker2 new-marker2))))
+    (println (str "Start for 1 vs 2: " (mth/floor (comp-markers new-marker1 marker2))))
+    (println (str "End for 1 vs 2: " (mth/floor (comp-markers marker1 new-marker2))))))
 
 (defn mutate-organism [world uid]
   (let [parent (get-in world [:fauna uid])
         new-uid (make-uid)
         sprite (:sprite parent) 
         color (:color parent)
-        energy-max (:energy-max parent) energy energy-max
+        energy-max (:energy-max parent)
         title (:name parent) 
         move-matrix (:move-matrix parent)
         birthdate (:time world)
@@ -645,15 +723,21 @@
         rest-max (:rest-max parent)
         strength (:strength parent)
         evasion (:evasion parent)
-        marker (:marker parent)]
+        marker (:marker parent)
+        hunger-count-max (:hunger-count-max parent)
+        hunger-wander (:hunger-wander parent)
+        hunger-wander-odds (:hunger-wander-odds parent)
+        shadow-prey (:shadow-prey parent)]
     {:sprite (mutate-sprite sprite) 
      :color (mutate-color color)
      :move-matrix (mutate-move-matrix move-matrix) 
      :last-move 5
-     :energy-max (mutate-energy-max energy-max) :energy energy
+     :energy-max (mutate-energy-max energy-max) 
+     :energy (mth/round (/ energy-max 3))
      :uid new-uid :alive true 
      :name (mutate-name title)
-     :prefs (mutate-prefs prefs) :senses senses
+     :prefs (mutate-prefs prefs) 
+     :senses senses
      :birthdate birthdate :parent title
      :sequence [] :leap-odds (mutate-leap-odds leap-odds)
      :leap-length (mutate-leap-length leap-length)
@@ -661,7 +745,11 @@
      :rest-counter rest-max
      :strength (mutate-strength strength)
      :evasion (mth/round (+ evasion (u/pick-norm-dist 0 1)))
-     :marker (mutate-marker marker)}))
+     :marker (mutate-marker marker)
+     :hunger-count-max (mutate-hunger-count-max hunger-count-max) 
+     :hunger-count hunger-count-max 
+     :hunger-wander (mutate-hunger-wander hunger-wander)
+     :hunger-wander-odds (mutate-hunger-wander-odds hunger-wander-odds)}))
 
 (defn try-reproduce [world uid]
   (if (and (u/roll-against (get-in world [:config :reproduction-rate]))

@@ -213,3 +213,23 @@
   "Rotate a matrix clockwise."
   (vec (apply map vector (reverse m))))
 
+(defn indices-by-region* [radius axis]
+  "Radius is distance from center of neighborhood.
+  Positive radius: top or right.
+  Negative radius: bottom or left.
+  Axis is 'x' for left/right, 'y' for top/bottom."
+
+  (let [range-radius (if (neg? radius) 
+                     (range -1 (dec radius) -1)
+                     (range 1 (inc radius)))]
+    (if (= axis "x")
+      (mapv (fn [x]
+                (mapv (fn [y] [x y]) 
+                  (range (- (mth/abs x)) (inc (mth/abs x)))))
+        range-radius)
+      (mapv (fn [y]
+                (mapv (fn [x] [x y]) 
+                  (range (- (mth/abs y)) (inc (mth/abs y)))))
+        range-radius))))
+
+(def indices-by-region (memoize indices-by-region*))

@@ -15,7 +15,7 @@
   (-> d/world-skeleton
       (assoc-in [:world-map] (world/gen-world-map 100))
       (assoc-in [:tile-types] (world/gen-world-tile-types 100))
-      ((partial world/gen-fauna 20))
+      ((partial world/gen-fauna 200))
       (world/initialize-food)
       (world/gen-food))) ;;Initial organisms
 
@@ -30,6 +30,7 @@
           (-> new-world            
               (world/use-energy uid)
               (world/find-food uid)
+              (world/check-hunger uid)
               (world/try-move uid)
               (world/find-prey uid)   
               (world/try-reproduce uid)
@@ -60,6 +61,7 @@
             rest-counter (world/get-trait world uid :rest-counter)
             rest-amount (world/get-trait world uid :rest-amount)
             strength (world/get-trait world uid :strength)
+            evasion (world/get-trait world uid :evasion)
             aggression (world/get-trait world uid :aggression)
             ]
         (console/update-info (str "<p><br>Name: the " title 
@@ -69,11 +71,16 @@
                                   "<br>...food->" (:food prefs) 
                                   "<br>...kin->" (:kin prefs) 
                                   "<br>...non-kin (aggression)->" (:non-kin prefs)
-                                  "<br>Strength: " strength 
+                                  "<br>...shadow prey->" (mth/round (:shadow-prey prefs))
+                                  "<br>Strength: " strength
+                                  "<br>Evasion:" (mth/round evasion) 
                                   "<br>Birthdate: " birthdate
                                   "<br>Parent: " parent
                                   "<br>Sequence: " sequence
-                                  "<br>Leap Odds: " leap-odds
+                                  "<br>Hunger Count: " (world/get-trait world uid :hunger-count)
+                                  "<br>Hunger Count Max: " (world/get-trait world uid :hunger-count-max)
+                                  "<br>Hunger Wander: " (world/get-trait world uid :hunger-wander)
+                                  "<br>Hunger Wander Odds: " (mth/round (world/get-trait world uid :hunger-wander-odds)) "%"
                                   "<br>Rest Countdown: " rest-counter
                                   "</p>")
                               color
