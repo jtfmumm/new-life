@@ -133,7 +133,7 @@
      :last-move 5
      :energy-max energy-max :energy energy
      :uid uid :alive true :name title
-     :senses {:vision 3 :hearing 2 :smell 2}
+     :senses {:vision 4 :hearing 2 :smell 2}
      :strength (mth/round (u/pick-norm-dist 50 2))
      :prefs {:food 5 
              :kin 0 
@@ -142,7 +142,8 @@
      :sequence [] 
      :leap-odds leap-odds :leap-length 12
      :rest-max 7 :rest-counter (u/pick-rand-int 6 8)
-     :evasion (u/pick-norm-dist 2 1)}))
+     :evasion (u/pick-norm-dist 2 1)
+     :marker (vec (repeatedly 9 #(u/pick-rand-int 0 9)))}))
 
 (defn deploy-organism [world]
   (let [uid (make-uid)
@@ -223,7 +224,10 @@
 
 (defn eat-up [world uid target]
     (let [target-val (d/food-value target)
-          FOOD-BOOST (* target-val (get-config world :food-boost))          
+          carnivorous (get-trait world uid :non-kin)
+          FOOD-BOOST (if (> carnivorous 0)
+                        (* target-val (mth/round (/ (get-config world :food-boost) 2)))
+                        (* target-val (get-config world :food-boost)))          
           energy (get-trait world uid :energy) 
           energy-max (get-trait world uid :energy-max)
           new-energy (if (<= (+ FOOD-BOOST energy) energy-max)
@@ -254,21 +258,32 @@
     (loop [world world]
       (if (<= (u/pick-variation (mth/round (/ (get-trait world target :evasion) 2)))
               0)
-        (let [aggressor (get-name world uid)
-              prey (get-name world target)
-              strength (get-in world [:fauna uid :strength])
-              prey-strength (get-in world [:fauna target :strength])
-              damage strength ;(u/pick-rand-int 0 strength)
-              reply 0;(mth/round (/ (u/pick-rand-int 0 prey-strength) 2))
-              new-world (-> world
-                            (update-in [:fauna target :energy] - damage))
-              potential (mth/round (get-in world [:fauna target :energy-max]))]
-          (if-not (> (get-in new-world [:fauna target :energy]) 0)
-                  (do
-                    (console/print-to-console (str "The " prey " was killed by the " aggressor " in round " (:time world) "!"))
-                    (-> new-world
-                        (update-in [:fauna uid :energy] + potential)))
-                  (recur new-world)))
+        (if-not (> (get-in world [:fauna uid :energy]) 0)
+          world ;;The aggressor is killed      
+          (let [aggressor (get-name world uid)
+                energy (get-trait world uid :energy)
+                energy-max2 (* 2 (get-trait world uid :energy-max))
+                prey (get-name world target)
+                strength (get-in world [:fauna uid :strength])
+                prey-strength (get-in world [:fauna target :strength])
+                damage strength ;(u/pick-rand-int 0 strength)
+                reply (mth/round (/ prey-strength 2))
+                new-world (-> world
+                              (update-in [:fauna target :energy] - damage))
+                potential (mth/round (get-in world [:fauna target :energy-max]))]
+            (if-not (> (get-in new-world [:fauna target :energy]) 0)
+                    (do
+                      (console/print-to-console (str "The " prey " was killed by the " aggressor " in round " (:time world) "!"))
+                      (let [energy (get-trait world uid :energy)
+                            new-world (assoc-in new-world [:fauna target :energy] 0)]
+                        (if (> (+ potential energy) energy-max2)
+                          (-> new-world
+                              (assoc-in [:fauna uid :energy] energy-max2)))
+                          (-> new-world
+                              (update-in [:fauna uid :energy] + potential))))
+                    (recur 
+                      (-> new-world
+                          (update-in [:fauna uid :energy] - reply))))))
         (assoc-in world [:fauna target :sequence] 
           (u/consv 
             (repeat 10 4 #_(u/pick-rand-int 1 4)) 
@@ -383,10 +398,13 @@
 (defn neighbor-regions [neighbors]
   "Returns a map of vectors containing objects in the 
   four triangular quadrants, respectively."
+  (let [west (mtx/rotate-matrix neighbors)
+        south (mtx/rotate-matrix west)
+        east (mtx/rotate-matrix south)]
     {:north (get-region neighbors)
-     :west (get-region (mtx/rotate-matrix neighbors))
-     :south (get-region (mtx/rotate-matrix (mtx/rotate-matrix neighbors)))
-     :east (get-region (mtx/rotate-matrix (mtx/rotate-matrix (mtx/rotate-matrix neighbors))))})
+     :west (get-region west)
+     :south (get-region south)
+     :east (get-region east)}))
 
 (defn top-choice [values]
   (cond
@@ -606,6 +624,11 @@
 (defn mutate-move-matrix [move-matrix]
   move-matrix)
 
+(defn mutate-marker [marker]
+  (let [digit (u/pick-rand-int 0 8)
+        change (u/pick-rand-item [-1 1])]
+    (assoc marker digit (+ (marker digit) change))))
+
 (defn mutate-organism [world uid]
   (let [parent (get-in world [:fauna uid])
         new-uid (make-uid)
@@ -621,7 +644,8 @@
         leap-length (:leap-length parent)
         rest-max (:rest-max parent)
         strength (:strength parent)
-        evasion (:evasion parent)]
+        evasion (:evasion parent)
+        marker (:marker parent)]
     {:sprite (mutate-sprite sprite) 
      :color (mutate-color color)
      :move-matrix (mutate-move-matrix move-matrix) 
@@ -636,7 +660,8 @@
      :rest-max (mutate-rest-max rest-max)
      :rest-counter rest-max
      :strength (mutate-strength strength)
-     :evasion (mth/round (+ evasion (u/pick-norm-dist 0 1)))}))
+     :evasion (mth/round (+ evasion (u/pick-norm-dist 0 1)))
+     :marker (mutate-marker marker)}))
 
 (defn try-reproduce [world uid]
   (if (and (u/roll-against (get-in world [:config :reproduction-rate]))

@@ -17,7 +17,7 @@
 
 (defn abs [x]
 	(.abs js/Math x))
-
+	
 (defn bounds [low high x]
 	(cond
 		(< x low) low

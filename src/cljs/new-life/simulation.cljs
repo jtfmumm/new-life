@@ -125,31 +125,34 @@
   (let [ms (get-in world [:config :tick])]
     ;(world/draw-world-background world)  
     (console/update-timer world)
-    (let [c-events (chan 123)]
+    (let [c-events (chan 123)
+          start-bencher (.getTime (new js/Date))]
       (go
-        (loop [world world]
+        (loop [world world last-bencher start-bencher cur-bencher start-bencher]
           (world/clear-screen (get-in world [:config]))
           (world/draw-world world)
           (world/highlight-selected world)  
           ;;Process events
           (if (:pause world)
             (if-let [event (<! (nonparking c-events))]
-              (recur (process-events world event))
-              (recur world))
+              (recur (process-events world event) last-bencher (.getTime (new js/Date)))
+              (recur world last-bencher (.getTime (new js/Date))))
             (if-let [event (<! (nonparking c-events))] 
-              (recur (process-events world event))
+              (recur (process-events world event) last-bencher (.getTime (new js/Date)))
           ;;Update simulation                 
               (let [synchronize (timeout ms)
                     config (get-in world [:config])
                     next-world (-> world
                                   (update-in [:time] inc)
                                   (world/grow-food)
-                                  (update-organisms))]
+                                  (update-organisms)
+                                  )]
                 (console/update-timer world)
                 (console/update-console)
                 (info-sprite world @console/current-info)
                 (<! synchronize)
-                (recur next-world))))))
+                (.log js/console (str "Round time: " (- cur-bencher last-bencher) " ms."))
+                (recur next-world cur-bencher (.getTime (new js/Date))))))))
         c-events)))
 
 
@@ -161,3 +164,10 @@
   (jq/on cvs/$world-foreground "click" (fn [e]
                                           (put! c-events {:type :click
                                                           :coords [(.-pageX e) (.-pageY e)]}))))
+#_(go 
+  (loop [world (initialize-world) last-time (.getTime (new js/Date)) cur-time last-time]
+    (let [new-world (reduce #(if-not (= %2 nil) (world/try-move %1 %2) %1) world (d/list-live-uids world))]  
+      (.log js/console (str "Round time: " (- cur-time last-time) " ms."))
+      (<! (timeout 50))
+      (recur new-world cur-time (.getTime (new js/Date))))))
+
