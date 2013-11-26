@@ -1,4 +1,5 @@
-(ns new-life.matrix)
+(ns new-life.matrix
+  (:require [new-life.math :as mth]))
 
 
 

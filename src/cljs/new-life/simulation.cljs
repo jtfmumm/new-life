@@ -15,7 +15,7 @@
   (-> d/world-skeleton
       (assoc-in [:world-map] (world/gen-world-map 100))
       (assoc-in [:tile-types] (world/gen-world-tile-types 100))
-      ((partial world/gen-fauna 200))
+      ((partial world/gen-fauna 20))
       (world/initialize-food)
       (world/gen-food))) ;;Initial organisms
 

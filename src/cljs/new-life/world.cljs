@@ -128,9 +128,9 @@
           energy-max (mth/floor (u/pick-norm-dist 100 5)) energy energy-max
           title (d/generate-name) move-matrix (d/generate-move-matrix)
           leap-odds (u/pick-norm-dist 1 0.25)
-          hunger-count (mth/round (u/pick-norm-dist 40 5))
-          hunger-wander (mth/round (u/pick-norm-dist 10 2))
-          hunger-wander-odds (u/pick-norm-dist 50 5)]
+          hunger-count (mth/abs (mth/round (u/pick-norm-dist 35 10)))
+          hunger-wander (mth/abs (mth/round (u/pick-norm-dist 5 2)))
+          hunger-wander-odds (mth/abs (u/pick-norm-dist 50 15))]
     {:sprite sprite :color color
      :move-matrix move-matrix 
      :last-move 5
@@ -264,12 +264,12 @@
 
 (defn check-hunger [world uid]
   (let [hunger-amount (get-trait world uid :hunger-wander)
-        odds (get-trait world uid :mutate-hunger-wander-odds)
+        odds (get-trait world uid :hunger-wander-odds)
         sequence (get-trait world uid :sequence)]
   (if (<= (get-trait world uid :hunger-count) 0)
     (if (u/roll-against odds)
       (-> world 
-          (assoc-in [:fauna uid :sequence] (vec (flatten (conj sequence (repeat hunger-amount (u/pick-rand-int 1 4))))))
+          (assoc-in [:fauna uid :sequence] (flatten (conj sequence (vec (repeat hunger-amount (u/pick-rand-int 1 4))))))
           (assoc-in [:fauna uid :hunger-count] (+ hunger-amount (get-trait world uid :hunger-count-max))))
       (assoc-in world [:fauna uid :hunger-count] (get-trait world uid :hunger-count-max)))
     (update-in world [:fauna uid :hunger-count] dec))))
@@ -391,11 +391,11 @@
   (count (filter target? region)))
 
 (defn get-region [neighbors direction]
-  (let [radius (count neighbors)
+  (let [radius (int (mth/floor (/ (count neighbors) 2)))
         dir-radius (case direction
                       :north (- radius)
-                      :east (- radius)
-                      :south (- radius)
+                      :east radius
+                      :south radius
                       :west (- radius))
         axis (case direction
                 :north "y"
@@ -404,10 +404,16 @@
                 :west "x")
         indices (mtx/indices-by-region dir-radius axis)
         center [(mth/abs radius) (mth/abs radius)]]
-    (mapv #(let [[x y] (mth/add-pairs center %)]
-              {:object ((neighbors y) x) :nearness (/ 1 proximity)})
-      indices)))
-;Use range from 0 to radius for indices
+    (loop [counter 0 region []]
+      (if (< counter (count indices))
+        (recur
+          (inc counter)
+          (conj region (mapv #(let [[x y] (mth/add-pairs center %)]
+                    {:object ((neighbors y) x) :nearness (/ 1 (inc counter))})
+            (indices counter))))
+        (vec (flatten region))))))
+         
+  ;Use range from 0 to radius for indices
 
 (defn get-region-old [neighbors]
   "Returns a vector containing all the objects in the
@@ -446,14 +452,11 @@
 
 (defn neighbor-regions [neighbors]
   "Returns a map of vectors containing objects in the 
-  four triangular quadrants, respectively."
-  (let [west (mtx/rotate-matrix neighbors)
-        south (mtx/rotate-matrix west)
-        east (mtx/rotate-matrix south)]
-    {:north (get-region neighbors)
-     :west (get-region west)
-     :south (get-region south)
-     :east (get-region east)}))
+  four triangular quadrants, respectively."  
+    {:north (get-region neighbors :north)
+     :west (get-region neighbors :west)
+     :south (get-region neighbors :south)
+     :east (get-region neighbors :east)})
 
 (defn top-choice [values]
   (cond
@@ -684,16 +687,13 @@
   (map #(+ % (u/pick-norm-dist 0 10)) marker))
 
 (defn mutate-hunger-count-max [hunger-count]
-  (mth/round (+ hunger-count (u/pick-norm-dist 0 2))))
+  (mth/abs (mth/round (+ hunger-count (u/pick-norm-dist 0 2)))))
 
 (defn mutate-hunger-wander [hunger-wander]
-  (mth/round (+ hunger-wander (u/pick-norm-dist 0 2))))
+  (mth/abs (mth/round (+ hunger-wander (u/pick-norm-dist 0 2)))))
 
 (defn mutate-hunger-wander-odds [hunger-wander-odds]
-  (mth/round (+ hunger-wander-odds (u/pick-norm-dist 0 2))))
-
-(defn mutate-shadow-prey [shadow-prey]
-  )
+  (mth/abs (mth/round (+ hunger-wander-odds (u/pick-norm-dist 0 2)))))
 
 (defn test-drift [marker mutations]
   (let [new-marker (vec (u/self-pipe marker mutate-marker 100))]
@@ -726,8 +726,7 @@
         marker (:marker parent)
         hunger-count-max (:hunger-count-max parent)
         hunger-wander (:hunger-wander parent)
-        hunger-wander-odds (:hunger-wander-odds parent)
-        shadow-prey (:shadow-prey parent)]
+        hunger-wander-odds (:hunger-wander-odds parent)]
     {:sprite (mutate-sprite sprite) 
      :color (mutate-color color)
      :move-matrix (mutate-move-matrix move-matrix) 
