@@ -107,7 +107,11 @@
 
 (defn update-info [world coords]
     (let [coords (transform-coords coords)
-          uid (world/get-object world coords)]
+          [x y] coords
+          nearby (world/find-nearby (:world-map world) x y world/organism?)
+          uid (if nearby
+                (first nearby)
+                0)]
        (if (> uid 100)
         (do 
           (reset! console/current-info uid)
