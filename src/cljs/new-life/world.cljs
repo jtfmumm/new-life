@@ -404,15 +404,13 @@
                 :west "x")
         indices (mtx/indices-by-region dir-radius axis)
         center [(mth/abs radius) (mth/abs radius)]]
-    (loop [counter 0 region []]
-      (if (< counter (count indices))
-        (recur
-          (inc counter)
-          (conj region (mapv #(let [[x y] (mth/add-pairs center %)]
-                    {:object ((neighbors y) x) :nearness (/ 1 (inc counter))})
-            (indices counter))))
-        (vec (flatten region))))))
-         
+    (vec (mapcat (fn [idx-vec counter] 
+                    (map (fn [rel-coords]
+                            (let [[x y] (mth/add-pairs center rel-coords)]
+                              {:object ((neighbors y) x) :nearness (/ 1 (inc counter))}))
+                         idx-vec))
+                 indices (range)))))
+           
   ;Use range from 0 to radius for indices
 
 (defn get-region-old [neighbors]
