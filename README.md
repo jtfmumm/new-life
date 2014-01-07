@@ -2,6 +2,8 @@
 
 Evolution simulator using canvas and core.async
 
+See for yourself at http://jtfmumm.com/newlife
+
 "Complicating, circulating  
 New life, new life  
 Operating, generating  
